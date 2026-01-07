@@ -907,6 +907,7 @@
                 jobs: [],
                 invoices: [],
                 totalInvoiced: 0,
+                laborInvoiced: 0,
                 totalPaid: 0,
                 createdAt: new Date().toISOString()
             };
@@ -1618,7 +1619,7 @@ function updateInvoicePreview() {
     } else if (type === 'progress') {
         const percent = parseFloat(document.getElementById('percentComplete').value) || 0;
         const totalLabor = calculateProjectCost(project);
-        const laborDue = (totalLabor * percent / 100) - (project.totalInvoiced || 0);
+        const laborDue = (totalLabor * percent / 100) - (project.laborInvoiced || 0);
         const expenses = getAllUninvoicedExpenses(project);
         const expenseTotal = expenses.reduce((sum, exp) => {
             const amt = parseFloat(exp.amount);
@@ -1733,8 +1734,14 @@ function generateInvoicePDF() {
         y += 10;
         doc.setFont(undefined, 'normal');
         doc.setFontSize(10);
-        doc.text('Deposit to schedule project', 15, y);
+        doc.text('Deposit to place project on schedule', 15, y);
         doc.text('$100.00', 170, y);
+        y += 5;
+        doc.setFontSize(9);
+        doc.setTextColor(100, 100, 100);
+        doc.text('(Applied to final invoice)', 15, y);
+        doc.setTextColor(0, 0, 0);
+        y += 5;
         invoiceTotal = 100;
     } else if (type === 'materials') {
         doc.setFontSize(11);
@@ -1770,7 +1777,7 @@ function generateInvoicePDF() {
     } else if (type === 'progress') {
         const percent = parseFloat(document.getElementById('percentComplete').value) || 0;
         const totalLabor = calculateProjectCost(project);
-        const laborDue = (totalLabor * percent / 100) - project.totalInvoiced;
+        const laborDue = (totalLabor * percent / 100) - (project.laborInvoiced || 0);
         
         doc.setFontSize(11);
         doc.setFont(undefined, 'bold');
@@ -1867,15 +1874,16 @@ function generateInvoicePDF() {
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(41, 128, 185);
-    doc.text('Amount Due:', 15, y);
+    doc.text('Amount This Invoice:', 15, y);
     doc.text(`$${invoiceTotal.toFixed(2)}`, 170, y);
     
-    // Payment history
+    // Invoice & Payment History
     if (project.invoices.length > 0) {
         y += 15;
         doc.setFontSize(11);
         doc.setTextColor(0, 0, 0);
-        doc.text('Payment History:', 15, y);
+        doc.setFont(undefined, 'bold');
+        doc.text('Invoice History:', 15, y);
         y += 7;
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
@@ -1885,9 +1893,52 @@ function generateInvoicePDF() {
             y += 5;
         });
         
-        y += 5;
+        y += 3;
         doc.setFont(undefined, 'bold');
         doc.text(`Total Previously Invoiced: $${project.totalInvoiced.toFixed(2)}`, 15, y);
+        y += 10;
+        
+        // Payment tracking
+        doc.setFont(undefined, 'normal');
+        doc.text(`Payments Received: $${(project.totalPaid || 0).toFixed(2)}`, 15, y);
+        y += 10;
+        
+        // Total now due (including current invoice)
+        const totalNowDue = project.totalInvoiced + invoiceTotal - (project.totalPaid || 0);
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(231, 76, 60);
+        doc.text(`TOTAL NOW DUE: $${totalNowDue.toFixed(2)}`, 15, y);
+    }
+    
+    // Payment methods
+    y += 20;
+    doc.setFontSize(11);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, 'bold');
+    doc.text('Accepted Payment Methods:', 15, y);
+    y += 7;
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    doc.text('Cash, Check, Venmo (@Kenneth-Collins-19)', 15, y);
+    y += 4;
+    doc.text('Cash App ($KenCollins3), Zelle (920-650-8300)', 15, y);
+    y += 4;
+    doc.text('PayPal (@ExactHouse)', 15, y);
+    y += 6;
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Please send a small test payment first to confirm before sending full amount.', 15, y);
+    
+    // Track labor amount for this invoice
+    let laborAmount = 0;
+    if (type === 'progress') {
+        const percent = parseFloat(document.getElementById('percentComplete').value) || 0;
+        const totalLabor = calculateProjectCost(project);
+        laborAmount = (totalLabor * percent / 100) - (project.laborInvoiced || 0);
+    } else if (type === 'final') {
+        const totalLabor = calculateProjectCost(project);
+        laborAmount = totalLabor - (project.laborInvoiced || 0);
     }
     
     // Save invoice record
@@ -1895,10 +1946,15 @@ function generateInvoicePDF() {
         number: invoiceNumber,
         type: type,
         amount: invoiceTotal,
+        laborAmount: laborAmount,
         date: new Date().toLocaleDateString(),
         timestamp: Date.now()
     });
     project.totalInvoiced += invoiceTotal;
+    if (laborAmount > 0) {
+        if (!project.laborInvoiced) project.laborInvoiced = 0;
+        project.laborInvoiced += laborAmount;
+    }
     
     saveData();
     
