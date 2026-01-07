@@ -563,11 +563,6 @@
                             <input type="text" id="siteAddress" value="${project.siteAddress}">
                         </div>
                         
-                        <div class="form-group">
-                            <label>Hourly Rate ($)</label>
-                            <input type="number" id="hourlyRate" value="${project.hourlyRate}">
-                        </div>
-                        
                         <button class="btn btn-success" style="width: 100%;" onclick="saveProject()">
                             💾 Save Project
                         </button>
@@ -909,7 +904,7 @@
             state.currentProject.customerEmail = document.getElementById('customerEmail').value;
             state.currentProject.customerPhone = document.getElementById('customerPhone').value;
             state.currentProject.siteAddress = document.getElementById('siteAddress').value;
-            state.currentProject.hourlyRate = document.getElementById('hourlyRate').value;
+            state.currentProject.hourlyRate = state.settings.defaultHourlyRate; // Use default from settings
             
             if (!state.currentProject.name || !state.currentProject.customerName) {
                 alert('Please fill in customer name and project name');
@@ -1218,127 +1213,184 @@ Be realistic with time estimates. Include prep, execution, and cleanup time.`
             }
         }
 
-        function exportPDF(isChangeOrder = false) {
-            diagLog('Generating PDF estimate...', 'info');
-            
-            if (typeof window.jspdf === 'undefined') {
-                alert('PDF export unavailable.');
-                return;
-            }
-            
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            const project = state.currentProject;
-            
-            // Add logo
-            if (COMPANY_LOGO) {
-                try {
-                    doc.addImage(COMPANY_LOGO, 'PNG', 15, 10, 40, 15);
-                } catch(e) {
-                    diagLog('Logo error: ' + e.message, 'warning');
-                }
-            }
-            
-            // Company header
-            doc.setFontSize(16);
-            doc.setTextColor(52, 73, 94);
-            doc.text('EXACT HOUSE', 60, 15);
-            doc.setFontSize(10);
-            doc.text(state.settings.companyEmail, 60, 20);
-            doc.text(state.settings.companyPhone || '920-650-8300', 60, 24);
-            
-            // Title
-            doc.setTextColor(52, 73, 94);
-            doc.setFontSize(18);
-            const title = isChangeOrder ? 'SCOPE CHANGE ORDER' : 'PROJECT ESTIMATE';
-            doc.text(title, 15, 40);
-            
-            // Customer info
-            doc.setFontSize(11);
-            doc.text('Customer Information', 15, 65);
-            doc.setFontSize(10);
-            doc.text(`Name: ${project.customerName}`, 15, 72);
-            doc.text(`Email: ${project.customerEmail}`, 15, 77);
-            doc.text(`Phone: ${project.customerPhone}`, 15, 82);
-            doc.text(`Address: ${project.siteAddress}`, 15, 87);
-            
-            // Project details
-            doc.setFontSize(11);
-            doc.text('Project Details', 15, 100);
-            doc.setFontSize(10);
-            doc.text(`Project: ${project.name}`, 15, 107);
-            doc.text(`Phase: ${project.phase}`, 15, 112);
-            doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, 117);
-            doc.text(`Hourly Rate: $${project.hourlyRate}/hour`, 15, 122);
-            
-            // Jobs
-            let yPos = 135;
-            doc.setFontSize(14);
-            doc.text('Scope of Work', 15, yPos);
-            yPos += 10;
-            
-            let totalHours = 0;
-            let totalExpenses = 0;
-            
-            project.jobs.forEach((job, idx) => {
-                const jobHours = job.tasks.reduce((sum, task) => sum + (parseFloat(task.hours) || 0), 0);
-                const jobExpenses = (job.expenses || []).reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0);
-                totalHours += jobHours;
-                totalExpenses += jobExpenses;
-                
-                doc.setFontSize(11);
-                doc.text(`${idx + 1}. ${job.name}`, 17, yPos);
-                doc.text(`${jobHours.toFixed(1)} hours`, 170, yPos);
-                yPos += 7;
-                
-                if (job.description) {
-                    doc.setFontSize(9);
-                    const lines = doc.splitTextToSize(job.description, 175);
-                    doc.text(lines, 17, yPos);
-                    yPos += lines.length * 4 + 5;
-                }
-                
-                if (yPos > 250) {
-                    doc.addPage();
-                    yPos = 20;
-                }
-            });
-            
-            // Total
-            yPos += 10;
-            doc.line(15, yPos, 195, yPos);
-            yPos += 8;
-            
-            const totalCost = totalHours * parseFloat(project.hourlyRate);
-            const profit = totalCost - totalExpenses;
-            
-            doc.setFontSize(12);
-            doc.text('Total Hours:', 15, yPos);
-            doc.text(`${totalHours.toFixed(1)} hours`, 150, yPos);
-            yPos += 7;
-            
-            doc.text('Total Labor Cost:', 15, yPos);
-            doc.text(`$${totalCost.toFixed(2)}`, 150, yPos);
-            yPos += 7;
-            
-            if (totalExpenses > 0) {
-                doc.text('Total Expenses:', 15, yPos);
-                doc.text(`$${totalExpenses.toFixed(2)}`, 150, yPos);
-                yPos += 7;
-                
-                doc.setFontSize(14);
-                doc.setTextColor(41, 128, 185);
-                doc.text('Net Profit:', 15, yPos);
-                doc.text(`$${profit.toFixed(2)}`, 150, yPos);
-            }
-            
-            doc.save(`${project.name.replace(/\s+/g, '-')}-${isChangeOrder ? 'change-order' : 'estimate'}.pdf`);
-            
-            // Auto-update phase
-            autoUpdatePhase(project, 'estimate_exported');
-            render();
-            diagLog('PDF exported successfully', 'success');
+function exportPDF(isChangeOrder = false) {
+    diagLog('Generating PDF estimate...', 'info');
+    
+    if (typeof window.jspdf === 'undefined') {
+        alert('PDF export unavailable.');
+        return;
+    }
+    
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const project = state.currentProject;
+    
+    // Add logo with correct aspect ratio (wider, not tall)
+    if (COMPANY_LOGO) {
+        try {
+            doc.addImage(COMPANY_LOGO, 'JPEG', 15, 10, 60, 18); // Wider logo
+        } catch(e) {
+            diagLog('Logo error: ' + e.message, 'warning');
         }
+    }
+    
+    // Company info
+    doc.setFontSize(10);
+    doc.setTextColor(52, 73, 94);
+    doc.text(state.settings.companyEmail, 80, 15);
+    doc.text(state.settings.companyPhone || '920-650-8300', 80, 20);
+    
+    // Title
+    doc.setFontSize(18);
+    doc.setTextColor(52, 73, 94);
+    doc.text('PROJECT ESTIMATE', 15, 40);
+    
+    // Customer Information
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.text('Customer Information', 15, 55);
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(10);
+    doc.text(`Name: ${project.customerName}`, 15, 62);
+    doc.text(`Email: ${project.customerEmail}`, 15, 67);
+    doc.text(`Phone: ${project.customerPhone}`, 15, 72);
+    doc.text(`Address: ${project.siteAddress}`, 15, 77);
+    
+    // Project Details  
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.text('Project Details', 15, 90);
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(10);
+    doc.text(`Project: ${project.name}`, 15, 97);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, 102);
+    
+    // Scope of Work
+    let yPos = 115;
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Scope of Work', 15, yPos);
+    doc.setFont(undefined, 'normal');
+    yPos += 10;
+    
+    let totalCost = 0;
+    
+    project.jobs.forEach((job, idx) => {
+        if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        const jobHours = job.tasks.reduce((sum, task) => sum + (parseFloat(task.hours) || 0), 0);
+        const jobCost = jobHours * parseFloat(project.hourlyRate);
+        totalCost += jobCost;
+        
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text(`${idx + 1}. ${job.name}`, 17, yPos);
+        doc.setFont(undefined, 'normal');
+        doc.text(`$${jobCost.toFixed(2)}`, 170, yPos);
+        yPos += 7;
+        
+        if (job.description) {
+            doc.setFontSize(9);
+            const lines = doc.splitTextToSize(job.description, 175);
+            doc.text(lines, 17, yPos);
+            yPos += lines.length * 4 + 5;
+        }
+    });
+    
+    // Total
+    yPos += 10;
+    doc.line(15, yPos, 195, yPos);
+    yPos += 8;
+    
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(41, 128, 185);
+    doc.text('Total Project Cost:', 15, yPos);
+    doc.text(`$${totalCost.toFixed(2)}`, 170, yPos);
+    
+    // Add new page for Terms
+    doc.addPage();
+    yPos = 20;
+    
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Terms and Conditions', 15, yPos);
+    yPos += 10;
+    
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    
+    const terms = [
+        {
+            title: 'Why Hire Us',
+            text: 'We do this work every day. We show up when we say we will, we protect your home, and we finish what we start. My goal is simple: do quality work, communicate clearly, and make the process easy for you.'
+        },
+        {
+            title: 'Acceptance of Proposal',
+            text: 'Approval of this proposal by signature, email, or text message authorizes us to schedule and perform the work as described.'
+        },
+        {
+            title: 'Payment Terms',
+            text: 'A $100 scheduling deposit is required to place the project on our schedule and will be applied to the final invoice. Materials or fixtures purchased by us for your project are reimbursed on the next invoice, plus a 10% shopping fee not to exceed $30 per shopping trip. This fee helps cover time spent sourcing project-specific items and does not apply to tools, standard supplies, or items a contractor would normally be expected to have. One-day jobs are paid in full at the end of the job. Multi-day or multi-week jobs are paid weekly based on the estimated percentage of work completed to properly manage labor costs. No more than 90% of the total contract amount will be collected prior to final completion. The remaining balance is due upon completion.'
+        },
+        {
+            title: 'Accepted Payment Methods',
+            text: 'We accept cash, check, Venmo (@Kenneth-Collins-19), Cash App ($KenCollins3), Zelle (920-650-8300), or PayPal (@ExactHouse). When using any online payment service, please send a small test payment first and confirm receipt before sending the full amount. This helps avoid mistakes and delays. We are not responsible for payments sent to the wrong person or incorrect account. Payment is considered received only after confirmation.'
+        },
+        {
+            title: 'Late Payments and Interest',
+            text: 'Any balance not paid when due will accrue interest at 29.99% annually, calculated daily, which reflects the rate commonly charged on major home improvement store credit accounts, until paid in full.'
+        },
+        {
+            title: 'Suspension of Work',
+            text: 'If payment is not made as agreed, work may be paused and scheduling adjusted to allow time for the account to be brought current. We are not responsible for delays caused by non-payment.'
+        },
+        {
+            title: 'Collections and Lien Rights',
+            text: 'This agreement is governed by Wisconsin law. We reserve all rights to pursue collection and to file a construction lien as allowed under Wisconsin statutes. All costs related to collection, interest, or enforcement will be added to the balance owed.'
+        },
+        {
+            title: 'Hidden Conditions and Site Conditions',
+            text: 'Homes often contain hidden or unexpected conditions including but not limited to water damage, structural issues, wiring problems, plumbing issues, mold, rot, or code compliance items that are not visible until work begins. Discovery of these conditions will require additional labor, materials, time, or cost and will be discussed and approved before proceeding. The customer agrees to provide reasonable access to the work area, utilities, and a safe working environment.'
+        },
+        {
+            title: 'Change Orders',
+            text: 'Any work outside the original scope must be approved in advance by text or email and will be billed accordingly.'
+        },
+        {
+            title: 'Warranty',
+            text: 'We stand behind our workmanship on labor, excluding normal wear, pre-existing conditions, and manufacturer defects.'
+        }
+    ];
+    
+    terms.forEach(term => {
+        if (yPos > 270) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        doc.setFont(undefined, 'bold');
+        doc.text(term.title, 15, yPos);
+        yPos += 5;
+        
+        doc.setFont(undefined, 'normal');
+        const lines = doc.splitTextToSize(term.text, 180);
+        doc.text(lines, 15, yPos);
+        yPos += lines.length * 4 + 8;
+    });
+    
+    // Auto-update phase
+    autoUpdatePhase(project, 'estimate_exported');
+    render();
+    
+    doc.save(`${project.name.replace(/\s+/g, '-')}-Estimate.pdf`);
+    diagLog('PDF exported successfully', 'success');
+}
+
 
         function attachEventListeners() {
             // Event listeners are attached via inline onclick handlers
