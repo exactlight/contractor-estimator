@@ -787,42 +787,76 @@
                         <!-- Invoice & Payment Tracking -->
                         ${project.phase === PHASES.PROJECT_ACTIVE || project.phase === PHASES.PROJECT_BILLED || project.phase === PHASES.PROJECT_COMPLETE ? `
                             <div class="card">
-                                <h3 style="margin-bottom: 16px;">💰 Invoicing & Payment</h3>
+                                <h3 style="margin-bottom: 16px;">💰 Invoicing & Payment Ledger</h3>
                                 
+                                <!-- Invoice History with Delete -->
                                 ${(project.invoices && project.invoices.length > 0) ? `
-                                    <div style="background: #d4edda; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
-                                        <strong>Invoice History:</strong><br>
-                                        ${project.invoices.map(inv => `
-                                            <div style="font-size: 12px; margin-top: 4px;">
-                                                ${inv.number} - ${inv.type} - $${inv.amount.toFixed(2)} - ${inv.date}
+                                    <div style="background: #e8f4f8; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                                        <strong style="color: #2c3e50;">📄 Invoice History:</strong>
+                                        ${project.invoices.map((inv, idx) => `
+                                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-top: 8px; padding: 8px; background: white; border-radius: 4px;">
+                                                <span><strong>${inv.number}</strong> - ${inv.type} - <strong>$${inv.amount.toFixed(2)}</strong> - ${inv.date}</span>
+                                                <button onclick="deleteInvoice(${idx})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">🗑️ Delete</button>
                                             </div>
                                         `).join('')}
-                                        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #27ae60;">
-                                            <strong>Total Invoiced: $${(project.totalInvoiced || 0).toFixed(2)}</strong>
-                                        </div>
                                     </div>
-                                ` : ''}
+                                ` : '<div style="padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 16px; text-align: center; color: #7f8c8d;">No invoices yet</div>'}
                                 
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
-                                    <div>
-                                        <label style="font-size: 14px; color: #7f8c8d;">Total Invoiced</label>
-                                        <div style="font-size: 24px; font-weight: 700; color: #2c3e50;">
-                                            $${(project.totalInvoiced || 0).toFixed(2)}
-                                        </div>
+                                <!-- Payment History with Delete -->
+                                ${(project.payments && project.payments.length > 0) ? `
+                                    <div style="background: #d4edda; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                                        <strong style="color: #2c3e50;">💵 Payment History:</strong>
+                                        ${project.payments.map((pmt, idx) => `
+                                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-top: 8px; padding: 8px; background: white; border-radius: 4px;">
+                                                <span><strong>$${pmt.amount.toFixed(2)}</strong> - ${pmt.method} - ${pmt.date}</span>
+                                                <button onclick="deletePayment(${idx})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">🗑️ Delete</button>
+                                            </div>
+                                        `).join('')}
                                     </div>
-                                    <div>
-                                        <label style="font-size: 14px; color: #7f8c8d;">Amount Paid</label>
-                                        <input type="number" step="0.01" value="${project.totalPaid || 0}" 
-                                            onchange="updatePayment(this.value)"
-                                            style="width: 100%; font-size: 20px; font-weight: 700; padding: 8px; border: 2px solid #ecf0f1; border-radius: 8px;">
+                                ` : '<div style="padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 16px; text-align: center; color: #7f8c8d;">No payments recorded</div>'}
+                                
+                                <!-- Ledger Summary -->
+                                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 8px; margin-bottom: 16px; color: white;">
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; text-align: center;">
+                                        <div>
+                                            <div style="font-size: 12px; opacity: 0.9;">Total Invoiced</div>
+                                            <div style="font-size: 24px; font-weight: 700;">$${(project.totalInvoiced || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; opacity: 0.9;">Total Paid</div>
+                                            <div style="font-size: 24px; font-weight: 700;">$${(project.totalPaid || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; opacity: 0.9;">Currently Due</div>
+                                            <div style="font-size: 24px; font-weight: 700;">$${Math.max(0, (project.totalInvoiced || 0) - (project.totalPaid || 0)).toFixed(2)}</div>
+                                        </div>
                                     </div>
                                 </div>
                                 
-                                <div style="background: ${(project.totalPaid || 0) >= (project.totalInvoiced || 0) ? '#d4edda' : '#fff3cd'}; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-                                    <div style="font-size: 14px; margin-bottom: 4px;">Outstanding Balance:</div>
-                                    <div style="font-size: 32px; font-weight: 700; color: ${(project.totalPaid || 0) >= (project.totalInvoiced || 0) ? '#27ae60' : '#f39c12'};">
-                                        $${Math.max(0, (project.totalInvoiced || 0) - (project.totalPaid || 0)).toFixed(2)}
+                                <!-- Record Payment -->
+                                <div style="background: #fff3cd; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #f39c12;">
+                                    <strong style="display: block; margin-bottom: 12px; color: #2c3e50;">💳 Record Payment</strong>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                                        <div>
+                                            <label style="font-size: 12px; color: #7f8c8d; display: block; margin-bottom: 4px;">Amount</label>
+                                            <input type="number" step="0.01" id="paymentAmount" placeholder="0.00" 
+                                                style="width: 100%; padding: 8px; border: 2px solid #ecf0f1; border-radius: 6px; font-size: 16px; font-weight: 600;">
+                                        </div>
+                                        <div>
+                                            <label style="font-size: 12px; color: #7f8c8d; display: block; margin-bottom: 4px;">Payment Method</label>
+                                            <select id="paymentMethod" style="width: 100%; padding: 8px; border: 2px solid #ecf0f1; border-radius: 6px; font-size: 14px;">
+                                                <option value="Cash">Cash</option>
+                                                <option value="Check">Check</option>
+                                                <option value="Venmo">Venmo</option>
+                                                <option value="CashApp">Cash App</option>
+                                                <option value="Zelle">Zelle</option>
+                                                <option value="PayPal">PayPal</option>
+                                            </select>
+                                        </div>
                                     </div>
+                                    <button onclick="recordPayment()" style="width: 100%; padding: 12px; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;">
+                                        ✅ Commit Payment to Ledger
+                                    </button>
                                 </div>
                                 
                                 <button class="btn" style="width: 100%; background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: white;" onclick="showInvoiceDialog()">
@@ -906,6 +940,7 @@
                 phase: PHASES.LEAD,
                 jobs: [],
                 invoices: [],
+                payments: [],
                 totalInvoiced: 0,
                 laborInvoiced: 0,
                 totalPaid: 0,
@@ -1484,16 +1519,36 @@ function exportPDF(isChangeOrder = false) {
         }
         
         // PAYMENT TRACKING
-        function updatePayment(amount) {
-            diagLog('Updating payment amount: $' + amount, 'info');
-            state.currentProject.totalPaid = parseFloat(amount) || 0;
+        // PAYMENT & INVOICE LEDGER FUNCTIONS
+        
+        function recordPayment() {
+            const amount = parseFloat(document.getElementById('paymentAmount').value);
+            const method = document.getElementById('paymentMethod').value;
             
-            const total = state.currentProject.totalInvoiced || 0;
-            const paid = state.currentProject.totalPaid;
+            if (!amount || amount <= 0) {
+                alert('Please enter a valid payment amount');
+                return;
+            }
             
-            if (paid >= total) {
+            if (!state.currentProject.payments) state.currentProject.payments = [];
+            
+            state.currentProject.payments.push({
+                amount: amount,
+                method: method,
+                date: new Date().toLocaleDateString(),
+                timestamp: Date.now()
+            });
+            
+            // Recalculate totalPaid
+            state.currentProject.totalPaid = state.currentProject.payments.reduce((sum, pmt) => sum + pmt.amount, 0);
+            
+            // Update payment status
+            const totalInvoiced = state.currentProject.totalInvoiced || 0;
+            const totalPaid = state.currentProject.totalPaid;
+            
+            if (totalPaid >= totalInvoiced) {
                 state.currentProject.paymentStatus = 'paid';
-            } else if (paid > 0) {
+            } else if (totalPaid > 0) {
                 state.currentProject.paymentStatus = 'partial';
             } else {
                 state.currentProject.paymentStatus = 'unpaid';
@@ -1501,7 +1556,75 @@ function exportPDF(isChangeOrder = false) {
             
             saveData();
             render();
-            diagLog('Payment status: ' + state.currentProject.paymentStatus, 'success');
+            diagLog(`Payment recorded: $${amount.toFixed(2)} via ${method}`, 'success');
+        }
+        
+        function deleteInvoice(index) {
+            if (!confirm('Delete this invoice? This will recalculate totals and expenses may become uninvoiced.')) {
+                return;
+            }
+            
+            const invoice = state.currentProject.invoices[index];
+            diagLog(`Deleting invoice: ${invoice.number}`, 'warning');
+            
+            // If invoice had expenses, mark them as uninvoiced
+            state.currentProject.jobs.forEach(job => {
+                if (job.expenses) {
+                    job.expenses.forEach(exp => {
+                        if (exp.invoiceNumber === invoice.number) {
+                            exp.invoiced = false;
+                            exp.invoiceNumber = null;
+                        }
+                    });
+                }
+            });
+            
+            // Remove from array
+            state.currentProject.invoices.splice(index, 1);
+            
+            // Recalculate totals
+            state.currentProject.totalInvoiced = state.currentProject.invoices.reduce((sum, inv) => sum + inv.amount, 0);
+            state.currentProject.laborInvoiced = state.currentProject.invoices.reduce((sum, inv) => sum + (inv.laborAmount || 0), 0);
+            
+            saveData();
+            render();
+            diagLog('Invoice deleted and totals recalculated', 'success');
+        }
+        
+        function deletePayment(index) {
+            if (!confirm('Delete this payment record?')) {
+                return;
+            }
+            
+            const payment = state.currentProject.payments[index];
+            diagLog(`Deleting payment: $${payment.amount} via ${payment.method}`, 'warning');
+            
+            // Remove from array
+            state.currentProject.payments.splice(index, 1);
+            
+            // Recalculate totalPaid
+            state.currentProject.totalPaid = state.currentProject.payments.reduce((sum, pmt) => sum + pmt.amount, 0);
+            
+            // Update payment status
+            const totalInvoiced = state.currentProject.totalInvoiced || 0;
+            const totalPaid = state.currentProject.totalPaid;
+            
+            if (totalPaid >= totalInvoiced) {
+                state.currentProject.paymentStatus = 'paid';
+            } else if (totalPaid > 0) {
+                state.currentProject.paymentStatus = 'partial';
+            } else {
+                state.currentProject.paymentStatus = 'unpaid';
+            }
+            
+            saveData();
+            render();
+            diagLog('Payment deleted and totals recalculated', 'success');
+        }
+        
+        function updatePayment(amount) {
+            // Legacy function - now use recordPayment instead
+            diagLog('Use "Record Payment" button instead', 'warning');
         }
         
         function getPaymentStatusBadge(project) {
@@ -1898,10 +2021,29 @@ function generateInvoicePDF() {
         doc.text(`Total Previously Invoiced: $${project.totalInvoiced.toFixed(2)}`, 15, y);
         y += 10;
         
-        // Payment tracking
-        doc.setFont(undefined, 'normal');
-        doc.text(`Payments Received: $${(project.totalPaid || 0).toFixed(2)}`, 15, y);
-        y += 10;
+        // Payment tracking with details
+        if (project.payments && project.payments.length > 0) {
+            doc.setFont(undefined, 'bold');
+            doc.text('Payment History:', 15, y);
+            y += 6;
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(9);
+            
+            project.payments.forEach(pmt => {
+                doc.text(`$${pmt.amount.toFixed(2)} - ${pmt.method} - ${pmt.date}`, 15, y);
+                y += 4;
+            });
+            
+            y += 4;
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'bold');
+            doc.text(`Total Payments: $${(project.totalPaid || 0).toFixed(2)}`, 15, y);
+            y += 8;
+        } else {
+            doc.setFont(undefined, 'normal');
+            doc.text(`Payments Received: $${(project.totalPaid || 0).toFixed(2)}`, 15, y);
+            y += 10;
+        }
         
         // Total now due (including current invoice)
         const totalNowDue = project.totalInvoiced + invoiceTotal - (project.totalPaid || 0);
