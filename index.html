@@ -1400,17 +1400,54 @@
             input.onchange = function(e) {
                 const file = e.target.files[0];
                 if (file) {
-                    if (file.size > 2 * 1024 * 1024) {
-                        alert('Logo must be under 2MB');
-                        return;
-                    }
-                    
                     const reader = new FileReader();
                     reader.onload = function(event) {
-                        state.settings.companyLogo = event.target.result;
-                        saveData();
-                        render();
-                        diagLog('Logo uploaded', 'success');
+                        // Compress logo image
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            
+                            // Logos should be smaller (max 600px wide)
+                            let width = img.width;
+                            let height = img.height;
+                            const maxWidth = 600;
+                            
+                            if (width > maxWidth) {
+                                height = (height * maxWidth) / width;
+                                width = maxWidth;
+                            }
+                            
+                            canvas.width = width;
+                            canvas.height = height;
+                            ctx.drawImage(img, 0, 0, width, height);
+                            
+                            // Compress to JPEG at 0.8 quality (higher for logos)
+                            const compressedLogo = canvas.toDataURL('image/jpeg', 0.8);
+                            
+                            // Check size
+                            const sizeKB = (compressedLogo.length * 0.75) / 1024;
+                            if (sizeKB > 500) {
+                                alert(`Logo is too large after compression (${Math.round(sizeKB)}KB).\n\nPlease use a smaller logo image.`);
+                                return;
+                            }
+                            
+                            state.settings.companyLogo = compressedLogo;
+                            
+                            try {
+                                saveData();
+                                render();
+                                diagLog(`Logo uploaded (${Math.round(sizeKB)}KB)`, 'success');
+                            } catch (error) {
+                                if (error.name === 'QuotaExceededError') {
+                                    alert('⚠️ Storage quota exceeded! Cannot save logo.');
+                                    state.settings.companyLogo = '';
+                                } else {
+                                    throw error;
+                                }
+                            }
+                        };
+                        img.src = event.target.result;
                     };
                     reader.readAsDataURL(file);
                 }
@@ -1613,10 +1650,9 @@
         function addPhoto(jobId, event) {
             const file = event.target.files[0];
             if (file) {
-                // Check file size (max 2MB before compression)
-                if (file.size > 2 * 1024 * 1024) {
-                    alert('Image is too large. Please choose an image under 2MB.');
-                    return;
+                // Show processing message for large files
+                if (file.size > 5 * 1024 * 1024) {
+                    diagLog('Processing large image...', 'info');
                 }
                 
                 const reader = new FileReader();
@@ -1644,6 +1680,16 @@
                         // Compress to JPEG at 0.7 quality
                         const compressedImage = canvas.toDataURL('image/jpeg', 0.7);
                         
+                        // Check compressed size (base64 is ~33% larger than actual bytes)
+                        const compressedSizeKB = (compressedImage.length * 0.75) / 1024;
+                        
+                        if (compressedSizeKB > 2048) {
+                            // Even after compression, image is > 2MB
+                            alert(`Image is still too large after compression (${Math.round(compressedSizeKB / 1024)}MB).\n\nPlease:\n1. Use a smaller image\n2. Or reduce image quality before uploading`);
+                            diagLog('Compressed image too large', 'error');
+                            return;
+                        }
+                        
                         const job = state.currentProject.jobs.find(j => j.id === jobId);
                         if (!job.photos) job.photos = [];
                         job.photos.push(compressedImage);
@@ -1651,7 +1697,7 @@
                         try {
                             saveData();
                             render();
-                            diagLog('Photo added', 'success');
+                            diagLog(`Photo added (${Math.round(compressedSizeKB)}KB)`, 'success');
                         } catch (error) {
                             if (error.name === 'QuotaExceededError') {
                                 alert('⚠️ Storage quota exceeded!\n\nYour browser storage is full. Please:\n1. Export a backup\n2. Delete some old projects\n3. Try adding the photo again');
@@ -1662,7 +1708,15 @@
                             }
                         }
                     };
+                    img.onerror = () => {
+                        alert('Error loading image. Please try a different photo.');
+                        diagLog('Image load error', 'error');
+                    };
                     img.src = e.target.result;
+                };
+                reader.onerror = () => {
+                    alert('Error reading file. Please try again.');
+                    diagLog('File read error', 'error');
                 };
                 reader.readAsDataURL(file);
             }
