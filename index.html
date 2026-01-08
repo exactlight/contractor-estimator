@@ -859,6 +859,22 @@
                                     </button>
                                 </div>
                                 
+                                <!-- Generated PDFs Viewer -->
+                                ${(project.generatedPDFs && project.generatedPDFs.length > 0) ? `
+                                    <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #3498db;">
+                                        <strong style="color: #2c3e50;">📎 Generated Documents</strong>
+                                        ${project.generatedPDFs.map((pdf, idx) => `
+                                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-top: 8px; padding: 8px; background: white; border-radius: 4px;">
+                                                <span><strong>${pdf.number}</strong> - ${pdf.type} - ${pdf.date}</span>
+                                                <div style="display: flex; gap: 4px;">
+                                                    <button onclick="viewPDF(${idx})" style="background: #3498db; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">👁️ View</button>
+                                                    <button onclick="deletePDF(${idx})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">🗑️</button>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : ''}
+                                
                                 <button class="btn" style="width: 100%; background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%); color: white;" onclick="showInvoiceDialog()">
                                     📄 Generate Invoice
                                 </button>
@@ -941,6 +957,7 @@
                 jobs: [],
                 invoices: [],
                 payments: [],
+                generatedPDFs: [],
                 totalInvoiced: 0,
                 laborInvoiced: 0,
                 totalPaid: 0,
@@ -1521,6 +1538,38 @@ function exportPDF(isChangeOrder = false) {
         // PAYMENT TRACKING
         // PAYMENT & INVOICE LEDGER FUNCTIONS
         
+        function viewPDF(index) {
+            const pdf = state.currentProject.generatedPDFs[index];
+            
+            // Create modal to view PDF
+            const modal = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 10001; display: flex; flex-direction: column;" onclick="this.remove()">
+                    <div style="padding: 20px; background: #2c3e50; color: white; display: flex; justify-content: space-between; align-items: center;">
+                        <h2 style="margin: 0;">${pdf.filename}</h2>
+                        <button onclick="event.stopPropagation(); this.closest('div[style*=fixed]').remove();" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">✕ Close</button>
+                    </div>
+                    <iframe src="${pdf.data}" style="flex: 1; border: none; background: white;" onclick="event.stopPropagation()"></iframe>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modal);
+            diagLog(`Viewing PDF: ${pdf.number}`, 'info');
+        }
+        
+        function deletePDF(index) {
+            if (!confirm('Delete this PDF? You can regenerate it if needed.')) {
+                return;
+            }
+            
+            const pdf = state.currentProject.generatedPDFs[index];
+            diagLog(`Deleting PDF: ${pdf.number}`, 'warning');
+            
+            state.currentProject.generatedPDFs.splice(index, 1);
+            saveData();
+            render();
+            diagLog('PDF deleted', 'success');
+        }
+        
         function recordPayment() {
             const amount = parseFloat(document.getElementById('paymentAmount').value);
             const method = document.getElementById('paymentMethod').value;
@@ -1763,12 +1812,22 @@ function updateInvoicePreview() {
             const fee = exp.applyShoppingFee ? Math.min(amt * 0.1, 30) : 0;
             return sum + amt + fee;
         }, 0);
-        const total = totalLabor + expenseTotal - (project.totalInvoiced || 0);
+        
+        const depositTotal = project.invoices
+            .filter(inv => inv.type === 'deposit')
+            .reduce((sum, inv) => sum + inv.amount, 0);
+        
+        const laborInvoiced = project.laborInvoiced || 0;
+        const remainingLabor = totalLabor - laborInvoiced;
+        const total = remainingLabor + expenseTotal - depositTotal;
         
         html += '<strong>Final Payment</strong><br>';
-        html += `Total Project: $${(totalLabor + expenseTotal).toFixed(2)}<br>`;
-        html += `Previously Invoiced: -$${(project.totalInvoiced || 0).toFixed(2)}<br>`;
-        html += `<br><strong>Balance Due: $${total.toFixed(2)}</strong>`;
+        html += `Total Labor: $${totalLabor.toFixed(2)}<br>`;
+        html += `Labor Invoiced: -$${laborInvoiced.toFixed(2)}<br>`;
+        html += `<strong>Remaining Labor: $${remainingLabor.toFixed(2)}</strong><br><br>`;
+        if (expenseTotal > 0) html += `Uninvoiced Materials: +$${expenseTotal.toFixed(2)}<br>`;
+        if (depositTotal > 0) html += `Deposit Applied: -$${depositTotal.toFixed(2)}<br>`;
+        html += `<br><strong style="color: #27ae60;">Balance Due: $${total.toFixed(2)}</strong>`;
     }
     
     html += '</div>';
@@ -1947,8 +2006,17 @@ function generateInvoicePDF() {
             const fee = exp.applyShoppingFee ? Math.min(amt * 0.1, 30) : 0;
             return sum + amt + fee;
         }, 0);
-        const grandTotal = totalLabor + expenseTotal;
-        invoiceTotal = grandTotal - project.totalInvoiced;
+        
+        // Calculate deposit total (to subtract from final)
+        const depositTotal = project.invoices
+            .filter(inv => inv.type === 'deposit')
+            .reduce((sum, inv) => sum + inv.amount, 0);
+        
+        const laborInvoiced = project.laborInvoiced || 0;
+        const remainingLabor = totalLabor - laborInvoiced;
+        
+        // Final invoice = Remaining Labor + Uninvoiced Materials - Deposit
+        invoiceTotal = remainingLabor + expenseTotal - depositTotal;
         
         doc.setFontSize(11);
         doc.setFont(undefined, 'bold');
@@ -1957,18 +2025,23 @@ function generateInvoicePDF() {
         doc.setFont(undefined, 'normal');
         doc.setFontSize(10);
         
-        doc.text('Total Project Cost', 15, y);
-        doc.text(`$${grandTotal.toFixed(2)}`, 170, y);
-        y += 7;
+        doc.text('Total Project (Labor)', 15, y);
+        doc.text(`$${totalLabor.toFixed(2)}`, 170, y);
+        y += 6;
         
-        doc.text('Previously Invoiced', 15, y);
-        doc.text(`-$${project.totalInvoiced.toFixed(2)}`, 170, y);
-        y += 7;
+        doc.text('Labor Previously Invoiced', 15, y);
+        doc.text(`-$${laborInvoiced.toFixed(2)}`, 170, y);
+        y += 6;
+        
+        doc.setFont(undefined, 'bold');
+        doc.text('Remaining Labor', 15, y);
+        doc.text(`$${remainingLabor.toFixed(2)}`, 170, y);
+        y += 10;
+        doc.setFont(undefined, 'normal');
         
         if (expenses.length > 0) {
-            y += 5;
             doc.setFont(undefined, 'bold');
-            doc.text('Remaining Materials:', 15, y);
+            doc.text('Uninvoiced Materials:', 15, y);
             y += 7;
             doc.setFont(undefined, 'normal');
             
@@ -1986,6 +2059,22 @@ function generateInvoicePDF() {
                 expense.invoiced = true;
                 expense.invoiceNumber = invoiceNumber;
             });
+            
+            y += 3;
+            doc.setFont(undefined, 'bold');
+            doc.text('Total Materials', 15, y);
+            doc.text(`$${expenseTotal.toFixed(2)}`, 170, y);
+            y += 10;
+            doc.setFont(undefined, 'normal');
+        }
+        
+        // Show deposit deduction
+        if (depositTotal > 0) {
+            doc.setFont(undefined, 'bold');
+            doc.text('Less: Deposit Applied', 15, y);
+            doc.text(`-$${depositTotal.toFixed(2)}`, 170, y);
+            y += 7;
+            doc.setFont(undefined, 'normal');
         }
     }
     
@@ -2100,13 +2189,35 @@ function generateInvoicePDF() {
     
     saveData();
     
-    // Close dialog
-    document.querySelector('div[style*="position: fixed"]').remove();
+    // Store PDF as base64 for in-app viewing
+    const pdfBlob = doc.output('blob');
+    const reader = new FileReader();
+    reader.onload = function() {
+        const base64PDF = reader.result;
+        
+        if (!project.generatedPDFs) project.generatedPDFs = [];
+        project.generatedPDFs.push({
+            number: invoiceNumber,
+            type: type === 'deposit' ? 'Deposit' : type === 'materials' ? 'Materials' : type === 'progress' ? 'Progress' : 'Final',
+            filename: `${invoiceNumber}-${project.name.replace(/\s+/g, '-')}.pdf`,
+            date: new Date().toLocaleDateString(),
+            timestamp: Date.now(),
+            data: base64PDF
+        });
+        
+        saveData();
+        render();
+        diagLog(`PDF stored: ${invoiceNumber}`, 'success');
+    };
+    reader.readAsDataURL(pdfBlob);
     
-    // Save PDF
+    // Close dialog IMMEDIATELY
+    const dialog = document.querySelector('div[style*="position: fixed"]');
+    if (dialog) dialog.remove();
+    
+    // Save PDF to downloads
     doc.save(`${invoiceNumber}-${project.name.replace(/\s+/g, '-')}.pdf`);
     
-    render();
     diagLog(`Invoice ${invoiceNumber} generated: $${invoiceTotal.toFixed(2)}`, 'success');
 }
     </script>
