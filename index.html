@@ -956,11 +956,8 @@
                         
                         <!-- Export Buttons -->
                         <div style="display: flex; gap: 12px; margin-bottom: 80px;">
-                            <button class="btn btn-success" style="flex: 1;" onclick="exportPDF()">
+                            <button class="btn btn-success" style="width: 100%;" onclick="exportPDF()">
                                 📄 Export Estimate
-                            </button>
-                            <button class="btn" style="flex: 1; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white;" onclick="exportPDF(true)">
-                                📄 Change Order
                             </button>
                         </div>
                     ` : ''}
@@ -1767,6 +1764,17 @@ function exportPDF(isChangeOrder = false) {
                     </div>
                     
                     <div style="margin-bottom: 16px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">📸 Photos</label>
+                        <div id="coPhotosList" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;"></div>
+                        <div style="display: flex; gap: 8px;">
+                            <button onclick="capturePhotoForCO()" style="background: #3498db; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;">📷 Take Photo</button>
+                            <button onclick="selectPhotoForCO()" style="background: #9b59b6; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 12px;">🖼️ Choose Photo</button>
+                        </div>
+                        <input type="file" id="coPhotoInput" accept="image/*" capture="environment" style="display: none;" onchange="handleCOPhotoCapture(event)">
+                        <input type="file" id="coPhotoSelect" accept="image/*" style="display: none;" onchange="handleCOPhotoSelect(event)">
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
                         <label style="font-weight: 600; margin-bottom: 8px; display: block;">Tasks</label>
                         <div id="coTasksList" style="margin-bottom: 12px;"></div>
                         <button onclick="addCOTask()" style="background: #3498db; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">➕ Add Task</button>
@@ -1788,6 +1796,51 @@ function exportPDF(isChangeOrder = false) {
         }
         
         let coTasks = [];
+        let coPhotos = [];
+        
+        function capturePhotoForCO() {
+            document.getElementById('coPhotoInput').click();
+        }
+        
+        function selectPhotoForCO() {
+            document.getElementById('coPhotoSelect').click();
+        }
+        
+        function handleCOPhotoCapture(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    coPhotos.push(e.target.result);
+                    renderCOPhotos();
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+        
+        function handleCOPhotoSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    coPhotos.push(e.target.result);
+                    renderCOPhotos();
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+        
+        function renderCOPhotos() {
+            const container = document.getElementById('coPhotosList');
+            if (!container) return;
+            
+            container.innerHTML = coPhotos.map((photo, idx) => `
+                <div style="position: relative; width: 100px; height: 100px;">
+                    <img src="${photo}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 8px; border: 2px solid #ecf0f1;">
+                    <button onclick="coPhotos.splice(${idx}, 1); renderCOPhotos();" style="position: absolute; top: -8px; right: -8px; background: #e74c3c; color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;">×</button>
+                </div>
+            `).join('');
+        }
         
         function addCOTask() {
             const task = { name: '', hours: 0 };
@@ -1959,17 +2012,15 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             doc.text(`Job: ${jobName}`, 15, y);
             y += 7;
             
-            doc.setFontSize(10);
-            coTasks.forEach(task => {
-                doc.text(`• ${task.name}`, 17, y);
-                doc.text(`${task.hours.toFixed(1)} hrs`, 170, y);
-                y += 5;
-            });
+            if (jobDesc) {
+                doc.setFontSize(10);
+                const descLines = doc.splitTextToSize(jobDesc, 175);
+                doc.text(descLines, 15, y);
+                y += descLines.length * 5;
+            }
             
-            y += 5;
+            y += 10;
             doc.setFont(undefined, 'bold');
-            doc.text(`Total Hours: ${totalHours.toFixed(1)} hrs @ $${project.hourlyRate}/hr`, 15, y);
-            y += 6;
             doc.setFontSize(12);
             doc.setTextColor(39, 174, 96);
             doc.text(`Additional Cost: $${cost.toFixed(2)}`, 15, y);
@@ -2014,7 +2065,7 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
                     name: jobName,
                     description: jobDesc,
                     tasks: coTasks.map(t => ({ ...t, completed: false })),
-                    photos: [],
+                    photos: coPhotos.slice(), // Copy photos array
                     expenses: []
                 };
                 
@@ -2051,6 +2102,7 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
                 
                 // Reset
                 coTasks = [];
+                coPhotos = [];
             };
             reader.readAsDataURL(pdfBlob);
             
@@ -2089,9 +2141,9 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
                     <div style="margin-bottom: 16px;">
                         <label style="font-weight: 600; margin-bottom: 8px; display: block;">Current Tasks</label>
                         ${job.tasks.map((task, idx) => `
-                            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px; padding: 8px; background: white; border: 1px solid #ecf0f1; border-radius: 4px;">
-                                <input type="checkbox" id="removeTask${idx}" style="cursor: pointer;">
-                                <label for="removeTask${idx}" style="flex: 1; cursor: pointer;">${task.name} - ${task.hours} hrs</label>
+                            <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 4px; padding: 12px; background: white; border: 1px solid #ecf0f1; border-radius: 4px;">
+                                <input type="checkbox" id="removeTask${idx}" style="cursor: pointer; width: 20px; height: 20px; flex-shrink: 0;">
+                                <label for="removeTask${idx}" style="flex: 1; cursor: pointer; font-size: 14px;">${task.name}</label>
                             </div>
                         `).join('')}
                         <button onclick="markTasksForRemoval()" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-top: 8px;">❌ Mark Selected for Removal</button>
@@ -2273,8 +2325,9 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
                 doc.setFont(undefined, 'normal');
                 doc.setTextColor(0, 0, 0);
                 addTasks.forEach(task => {
+                    const taskCost = (parseFloat(task.hours) || 0) * rate;
                     doc.text(`✅ ${task.name}`, 17, y);
-                    doc.text(`${task.hours} hrs`, 170, y);
+                    doc.text(`$${taskCost.toFixed(2)}`, 170, y);
                     y += 5;
                 });
                 y += 5;
@@ -2288,8 +2341,9 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
                 doc.setFont(undefined, 'normal');
                 doc.setTextColor(0, 0, 0);
                 removeTasks.forEach(task => {
+                    const taskCost = (parseFloat(task.hours) || 0) * rate;
                     doc.text(`❌ ${task.name}`, 17, y);
-                    doc.text(`${task.hours} hrs`, 170, y);
+                    doc.text(`-$${taskCost.toFixed(2)}`, 170, y);
                     y += 5;
                 });
                 y += 5;
@@ -2301,9 +2355,9 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             doc.text('COST IMPACT:', 15, y);
             y += 7;
             doc.setFont(undefined, 'normal');
-            doc.text(`Added work: +$${addCost.toFixed(2)} (${addHours.toFixed(1)} hrs)`, 15, y);
+            doc.text(`Added work: +$${addCost.toFixed(2)}`, 15, y);
             y += 6;
-            doc.text(`Removed work: -$${removeCost.toFixed(2)} (${removeHours.toFixed(1)} hrs)`, 15, y);
+            doc.text(`Removed work: -$${removeCost.toFixed(2)}`, 15, y);
             y += 8;
             doc.setFontSize(12);
             doc.setFont(undefined, 'bold');
