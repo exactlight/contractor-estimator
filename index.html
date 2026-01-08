@@ -533,6 +533,27 @@
                             </button>
                         </div>
                         
+                        <!-- Backup & Restore -->
+                        <div style="background: #fff3cd; padding: 20px; border-radius: 12px; border-left: 4px solid #f39c12; margin-bottom: 20px;">
+                            <h3 style="margin-bottom: 12px; color: #2c3e50;">💾 Backup & Restore</h3>
+                            <p style="font-size: 14px; color: #7f8c8d; margin-bottom: 12px;">
+                                Export all your data to a file, or restore from a previous backup.
+                            </p>
+                            <div style="display: flex; gap: 12px;">
+                                <button onclick="exportBackup()" 
+                                    style="flex: 1; background: #27ae60; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer;">
+                                    📥 Export Backup
+                                </button>
+                                <button onclick="importBackup()" 
+                                    style="flex: 1; background: #3498db; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer;">
+                                    📤 Import Backup
+                                </button>
+                            </div>
+                            <p style="font-size: 12px; color: #856404; margin-top: 12px;">
+                                💡 <strong>Tip:</strong> Upload backups to Google Drive for safekeeping and multi-device access!
+                            </p>
+                        </div>
+                        
                         <div class="form-group">
                             <label>Gemini API Key</label>
                             <input type="password" id="apiKey" value="${state.settings.apiKey}" placeholder="Enter your Gemini API key">
@@ -623,6 +644,11 @@
                         <div class="form-group">
                             <label>Site Address</label>
                             <input type="text" id="siteAddress" value="${project.siteAddress}">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Billing Address (if different from site)</label>
+                            <input type="text" id="billingAddress" value="${project.billingAddress || ''}" placeholder="Leave blank if same as site address">
                         </div>
                         
                         <button class="btn btn-success" style="width: 100%;" onclick="saveProject()">
@@ -1120,10 +1146,9 @@
         // V16 FEATURE 2: CUSTOMER MANAGEMENT
         // ============================================
         function saveCustomerFromProject(projectData) {
-            // Check if customer already exists
+            // Check if customer already exists by name
             let customer = state.customers.find(c => 
-                c.name.toLowerCase() === projectData.customerName.toLowerCase() &&
-                c.address.toLowerCase() === projectData.customerAddress.toLowerCase()
+                c.name.toLowerCase() === projectData.customerName.toLowerCase()
             );
             
             if (!customer) {
@@ -1131,14 +1156,21 @@
                 customer = {
                     id: 'cust-' + Date.now(),
                     name: projectData.customerName,
-                    address: projectData.customerAddress,
+                    address: projectData.siteAddress || '',
                     phone: projectData.customerPhone || '',
                     email: projectData.customerEmail || '',
+                    billingAddress: projectData.billingAddress || '',
                     created: new Date().toLocaleDateString(),
                     projects: []
                 };
                 state.customers.push(customer);
                 diagLog(`New customer created: ${customer.name}`, 'success');
+            } else {
+                // Update existing customer info
+                customer.phone = projectData.customerPhone || customer.phone;
+                customer.email = projectData.customerEmail || customer.email;
+                customer.address = projectData.siteAddress || customer.address;
+                customer.billingAddress = projectData.billingAddress || customer.billingAddress;
             }
             
             // Link project to customer
@@ -1166,7 +1198,8 @@
                                     <div style="display: flex; justify-content: space-between; align-items: start;">
                                         <div style="flex: 1;">
                                             <strong style="font-size: 16px;">${cust.name}</strong>
-                                            <div style="font-size: 14px; color: #7f8c8d; margin-top: 4px;">${cust.address}</div>
+                                            <div style="font-size: 14px; color: #7f8c8d; margin-top: 4px;">📍 ${cust.address}</div>
+                                            ${cust.billingAddress ? `<div style="font-size: 14px; color: #7f8c8d;">💳 Billing: ${cust.billingAddress}</div>` : ''}
                                             ${cust.phone ? `<div style="font-size: 14px; color: #7f8c8d;">📞 ${cust.phone}</div>` : ''}
                                             ${cust.email ? `<div style="font-size: 14px; color: #7f8c8d;">✉️ ${cust.email}</div>` : ''}
                                             <div style="font-size: 12px; color: #95a5a6; margin-top: 8px;">${cust.projects ? cust.projects.length : 0} project(s)</div>
@@ -1221,6 +1254,11 @@
                             <input type="email" id="editCustEmail" value="${customer.email || ''}" style="width: 100%; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px;">
                         </div>
                         
+                        <div style="margin-bottom: 16px;">
+                            <label style="font-weight: 600; display: block; margin-bottom: 4px;">Billing Address (if different)</label>
+                            <input type="text" id="editCustBilling" value="${customer.billingAddress || ''}" style="width: 100%; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px;" placeholder="Leave blank if same as address">
+                        </div>
+                        
                         <div style="display: flex; gap: 12px;">
                             <button onclick="closeEditCustomer()" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">Cancel</button>
                             <button onclick="saveEditedCustomer(${index})" style="flex: 1; padding: 12px; border: none; border-radius: 8px; background: #27ae60; color: white; cursor: pointer;">Save</button>
@@ -1242,6 +1280,7 @@
             state.customers[index].address = document.getElementById('editCustAddress').value;
             state.customers[index].phone = document.getElementById('editCustPhone').value;
             state.customers[index].email = document.getElementById('editCustEmail').value;
+            state.customers[index].billingAddress = document.getElementById('editCustBilling').value;
             
             // Update all projects with this customer
             const customer = state.customers[index];
@@ -1250,9 +1289,10 @@
                     const project = state.projects.find(p => p.id === projId);
                     if (project) {
                         project.customerName = customer.name;
-                        project.customerAddress = customer.address;
+                        project.siteAddress = customer.address;
                         project.customerPhone = customer.phone;
                         project.customerEmail = customer.email;
+                        project.billingAddress = customer.billingAddress;
                     }
                 });
             }
@@ -1289,18 +1329,20 @@
             if (!customerId) {
                 // Clear fields for new customer
                 document.getElementById('customerName').value = '';
-                document.getElementById('customerAddress').value = '';
                 document.getElementById('customerPhone').value = '';
                 document.getElementById('customerEmail').value = '';
+                document.getElementById('siteAddress').value = '';
+                document.getElementById('billingAddress').value = '';
                 return;
             }
             
             const customer = state.customers.find(c => c.id === customerId);
             if (customer) {
                 document.getElementById('customerName').value = customer.name;
-                document.getElementById('customerAddress').value = customer.address;
                 document.getElementById('customerPhone').value = customer.phone || '';
                 document.getElementById('customerEmail').value = customer.email || '';
+                document.getElementById('siteAddress').value = customer.address || '';
+                document.getElementById('billingAddress').value = customer.billingAddress || '';
             }
         }
         
@@ -1339,6 +1381,82 @@
                 render();
                 diagLog('Logo removed', 'info');
             }
+        }
+        
+        // ============================================
+        // V17 FEATURE: BACKUP & RESTORE
+        // ============================================
+        function exportBackup() {
+            const backup = {
+                version: '17.0',
+                exported: new Date().toISOString(),
+                exportDate: new Date().toLocaleDateString(),
+                projects: state.projects,
+                customers: state.customers,
+                settings: state.settings
+            };
+            
+            const dataStr = JSON.stringify(backup, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `contractor-backup-${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+            
+            URL.revokeObjectURL(url);
+            diagLog('Backup exported successfully', 'success');
+        }
+        
+        function importBackup() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        try {
+                            const backup = JSON.parse(event.target.result);
+                            
+                            // Validate backup
+                            if (!backup.projects || !backup.settings) {
+                                alert('Invalid backup file - missing required data');
+                                return;
+                            }
+                            
+                            const confirmMsg = `Import backup from ${backup.exportDate || 'unknown date'}?\n\n` +
+                                `Projects: ${backup.projects.length}\n` +
+                                `Customers: ${backup.customers ? backup.customers.length : 0}\n\n` +
+                                `⚠️ This will replace all current data!`;
+                            
+                            if (!confirm(confirmMsg)) {
+                                return;
+                            }
+                            
+                            // Restore data
+                            state.projects = backup.projects;
+                            state.customers = backup.customers || [];
+                            state.settings = { ...state.settings, ...backup.settings };
+                            
+                            saveData();
+                            state.view = 'list';
+                            state.currentProject = null;
+                            render();
+                            
+                            diagLog('Backup restored successfully', 'success');
+                            alert(`✅ Backup restored successfully!\n\nProjects: ${state.projects.length}\nCustomers: ${state.customers.length}`);
+                        } catch (error) {
+                            alert('❌ Error reading backup file: ' + error.message);
+                            diagLog('Backup restore failed: ' + error.message, 'error');
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
         }
 
         function showSettings() {
@@ -1391,6 +1509,7 @@
             state.currentProject.customerEmail = document.getElementById('customerEmail').value;
             state.currentProject.customerPhone = document.getElementById('customerPhone').value;
             state.currentProject.siteAddress = document.getElementById('siteAddress').value;
+            state.currentProject.billingAddress = document.getElementById('billingAddress').value;
             state.currentProject.hourlyRate = state.settings.defaultHourlyRate; // Use default from settings
             
             if (!state.currentProject.name || !state.currentProject.customerName) {
