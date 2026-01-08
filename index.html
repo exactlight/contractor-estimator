@@ -1644,8 +1644,8 @@ function exportPDF(isChangeOrder = false) {
         
         function showCreateChangeOrderDialog() {
             const dialog = `
-                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;" onclick="this.remove()">
-                    <div style="background: white; border-radius: 16px; padding: 24px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;" onclick="event.stopPropagation()">
+                <div id="coDialog" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+                    <div style="background: white; border-radius: 16px; padding: 24px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">
                         <h2 style="margin-bottom: 20px; color: #e67e22;">📝 Create Change Order</h2>
                         
                         <div style="margin-bottom: 20px;">
@@ -1660,27 +1660,45 @@ function exportPDF(isChangeOrder = false) {
                         <div id="coFormArea"></div>
                         
                         <div style="display: flex; gap: 12px; margin-top: 20px;">
-                            <button onclick="this.closest('div[style*=fixed]').remove()" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">Cancel</button>
+                            <button onclick="closeCODialog()" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">Cancel</button>
                             <button id="coNextBtn" onclick="handleCONext()" style="flex: 1; padding: 12px; border: none; border-radius: 8px; background: #e67e22; color: white; font-weight: 600; cursor: pointer;" disabled>Next →</button>
                         </div>
                     </div>
                 </div>
             `;
             document.body.insertAdjacentHTML('beforeend', dialog);
+            
+            // Close on background click
+            document.getElementById('coDialog').addEventListener('click', function(e) {
+                if (e.target.id === 'coDialog') {
+                    closeCODialog();
+                }
+            });
+        }
+        
+        function closeCODialog() {
+            const dialog = document.getElementById('coDialog');
+            if (dialog) dialog.remove();
         }
         
         function updateCOTypeUI() {
+            console.log('updateCOTypeUI called');
             const type = document.getElementById('coType').value;
             const formArea = document.getElementById('coFormArea');
             const nextBtn = document.getElementById('coNextBtn');
             
+            console.log('Selected type:', type);
+            console.log('Next button found:', !!nextBtn);
+            
             if (!type) {
                 formArea.innerHTML = '';
                 nextBtn.disabled = true;
+                console.log('No type selected, button disabled');
                 return;
             }
             
             nextBtn.disabled = false;
+            console.log('Button enabled!');
             
             if (type === 'add_job') {
                 formArea.innerHTML = `
@@ -1708,12 +1726,16 @@ function exportPDF(isChangeOrder = false) {
         }
         
         function handleCONext() {
+            console.log('handleCONext called!');
             const type = document.getElementById('coType').value;
+            console.log('Type in handleCONext:', type);
             
             if (type === 'add_job') {
+                console.log('Calling showAddJobCO');
                 showAddJobCO();
             } else if (type === 'modify_job') {
                 const jobId = document.getElementById('coJobSelect')?.value;
+                console.log('Job ID:', jobId);
                 if (!jobId) {
                     alert('Please select a job to modify');
                     return;
@@ -1723,9 +1745,15 @@ function exportPDF(isChangeOrder = false) {
         }
         
         function showAddJobCO() {
-            const dialog = document.querySelector('div[style*="position: fixed"]');
+            console.log('showAddJobCO called');
+            const dialog = document.getElementById('coDialog');
+            if (!dialog) {
+                console.error('Dialog not found!');
+                return;
+            }
+            
             dialog.innerHTML = `
-                <div style="background: white; border-radius: 16px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;" onclick="event.stopPropagation()">
+                <div style="background: white; border-radius: 16px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;">
                     <h2 style="margin-bottom: 20px; color: #e67e22;">➕ Add New Job - Change Order</h2>
                     
                     <div style="margin-bottom: 16px;">
@@ -1750,12 +1778,13 @@ function exportPDF(isChangeOrder = false) {
                     </div>
                     
                     <div style="display: flex; gap: 12px;">
-                        <button onclick="showCreateChangeOrderDialog()" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">← Back</button>
+                        <button onclick="closeCODialog(); showCreateChangeOrderDialog();" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">← Back</button>
                         <button onclick="generateAddJobCOPDF()" style="flex: 1; padding: 12px; border: none; border-radius: 8px; background: #e67e22; color: white; font-weight: 600; cursor: pointer;">Generate CO PDF</button>
                     </div>
                 </div>
             `;
             updateCOEstimate();
+            console.log('showAddJobCO complete');
         }
         
         let coTasks = [];
@@ -2033,12 +2062,24 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
         }
         
         function showModifyJobCO(jobId) {
+            console.log('showModifyJobCO called with jobId:', jobId);
             const project = state.currentProject;
             const job = project.jobs.find(j => j.id === jobId);
             
-            const dialog = document.querySelector('div[style*="position: fixed"]');
+            if (!job) {
+                console.error('Job not found!');
+                alert('Job not found');
+                return;
+            }
+            
+            const dialog = document.getElementById('coDialog');
+            if (!dialog) {
+                console.error('Dialog not found!');
+                return;
+            }
+            
             dialog.innerHTML = `
-                <div style="background: white; border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto;" onclick="event.stopPropagation()">
+                <div style="background: white; border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto;">
                     <h2 style="margin-bottom: 20px; color: #e67e22;">✏️ Modify Job - Change Order</h2>
                     
                     <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
@@ -2072,7 +2113,7 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
                     </div>
                     
                     <div style="display: flex; gap: 12px;">
-                        <button onclick="showCreateChangeOrderDialog()" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">← Back</button>
+                        <button onclick="closeCODialog(); showCreateChangeOrderDialog();" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">← Back</button>
                         <button onclick="generateModifyJobCOPDF('${jobId}')" style="flex: 1; padding: 12px; border: none; border-radius: 8px; background: #e67e22; color: white; font-weight: 600; cursor: pointer;">Generate CO PDF</button>
                     </div>
                 </div>
