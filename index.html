@@ -856,16 +856,68 @@
                             <div class="card">
                                 <h3 style="margin-bottom: 16px;">💰 Invoicing & Payment Ledger</h3>
                                 
-                                <!-- Invoice History with Delete -->
+                                <!-- Project Financial Summary -->
+                                <div style="background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; color: white; box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);">
+                                    <h3 style="margin: 0 0 16px 0; font-size: 18px; border-bottom: 2px solid rgba(255,255,255,0.3); padding-bottom: 8px;">💰 Project Financial Summary</h3>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                                        <div>
+                                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">Original Estimate</div>
+                                            <div style="font-size: 18px; font-weight: 600;">$${calculateProjectCost(project).toFixed(2)}</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">Change Orders</div>
+                                            <div style="font-size: 18px; font-weight: 600;">+$${((project.changeOrders || []).filter(co => co.status === 'approved').reduce((sum, co) => sum + co.costImpact, 0)).toFixed(2)}</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">Total Invoiced</div>
+                                            <div style="font-size: 18px; font-weight: 600;">$${(project.totalInvoiced || 0).toFixed(2)}</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size: 12px; opacity: 0.9; margin-bottom: 4px;">Payments Received</div>
+                                            <div style="font-size: 18px; font-weight: 600;">$${(project.totalPaid || 0).toFixed(2)}</div>
+                                        </div>
+                                    </div>
+                                    <div style="margin-top: 16px; padding-top: 16px; border-top: 2px solid rgba(255,255,255,0.3); text-align: center;">
+                                        <div style="font-size: 14px; opacity: 0.9; margin-bottom: 4px;">Balance Due</div>
+                                        <div style="font-size: 32px; font-weight: 700;">$${((project.totalInvoiced || 0) - (project.totalPaid || 0)).toFixed(2)}</div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Invoice History with Payment Status -->
                                 ${(project.invoices && project.invoices.length > 0) ? `
                                     <div style="background: #e8f4f8; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
                                         <strong style="color: #2c3e50;">📄 Invoice History:</strong>
-                                        ${project.invoices.map((inv, idx) => `
-                                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-top: 8px; padding: 8px; background: white; border-radius: 4px;">
-                                                <span><strong>${inv.number}</strong> - ${inv.type} - <strong>$${inv.amount.toFixed(2)}</strong> - ${inv.date}</span>
+                                        ${project.invoices.map((inv, idx) => {
+                                            // Calculate how much has been paid toward this invoice
+                                            // Simple algorithm: allocate payments in order
+                                            let invPaid = 0;
+                                            let runningTotal = 0;
+                                            for (let i = 0; i <= idx; i++) {
+                                                runningTotal += project.invoices[i].amount;
+                                            }
+                                            const paidSoFar = project.totalPaid || 0;
+                                            if (paidSoFar >= runningTotal) {
+                                                invPaid = inv.amount; // Fully paid
+                                            } else if (paidSoFar > (runningTotal - inv.amount)) {
+                                                invPaid = paidSoFar - (runningTotal - inv.amount); // Partially paid
+                                            }
+                                            
+                                            const status = invPaid >= inv.amount ? 'paid' : invPaid > 0 ? 'partial' : 'unpaid';
+                                            const statusColors = { paid: '#27ae60', partial: '#f39c12', unpaid: '#e74c3c' };
+                                            const statusLabels = { paid: '✓ Paid', partial: '◐ Partial', unpaid: '○ Unpaid' };
+                                            const statusColor = statusColors[status];
+                                            const statusLabel = statusLabels[status];
+                                            
+                                            return `
+                                            <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-top: 8px; padding: 8px; background: white; border-radius: 4px; border-left: 4px solid ${statusColor};">
+                                                <div style="flex: 1;">
+                                                    <div><strong>${inv.number}</strong> - ${inv.type} - <strong>$${inv.amount.toFixed(2)}</strong> - ${inv.date}</div>
+                                                    <div style="font-size: 11px; color: ${statusColor}; font-weight: 600; margin-top: 2px;">${statusLabel}${status === 'partial' ? ` ($${invPaid.toFixed(2)} paid)` : ''}</div>
+                                                </div>
                                                 <button onclick="deleteInvoice(${idx})" style="background: #e74c3c; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">🗑️ Delete</button>
                                             </div>
-                                        `).join('')}
+                                        `;
+                                        }).join('')}
                                     </div>
                                 ` : '<div style="padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 16px; text-align: center; color: #7f8c8d;">No invoices yet</div>'}
                                 
@@ -882,23 +934,6 @@
                                     </div>
                                 ` : '<div style="padding: 12px; background: #f8f9fa; border-radius: 8px; margin-bottom: 16px; text-align: center; color: #7f8c8d;">No payments recorded</div>'}
                                 
-                                <!-- Ledger Summary -->
-                                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px; border-radius: 8px; margin-bottom: 16px; color: white;">
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; text-align: center;">
-                                        <div>
-                                            <div style="font-size: 12px; opacity: 0.9;">Total Invoiced</div>
-                                            <div style="font-size: 24px; font-weight: 700;">$${(project.totalInvoiced || 0).toFixed(2)}</div>
-                                        </div>
-                                        <div>
-                                            <div style="font-size: 12px; opacity: 0.9;">Total Paid</div>
-                                            <div style="font-size: 24px; font-weight: 700;">$${(project.totalPaid || 0).toFixed(2)}</div>
-                                        </div>
-                                        <div>
-                                            <div style="font-size: 12px; opacity: 0.9;">Currently Due</div>
-                                            <div style="font-size: 24px; font-weight: 700;">$${Math.max(0, (project.totalInvoiced || 0) - (project.totalPaid || 0)).toFixed(2)}</div>
-                                        </div>
-                                    </div>
-                                </div>
                                 
                                 <!-- Record Payment -->
                                 <div style="background: #fff3cd; padding: 16px; border-radius: 8px; margin-bottom: 16px; border-left: 4px solid #f39c12;">
@@ -3128,54 +3163,127 @@ function generateInvoicePDF() {
     // Invoice & Payment History
     if (project.invoices.length > 0) {
         y += 15;
-        doc.setFontSize(11);
+        doc.setFontSize(12);
         doc.setTextColor(0, 0, 0);
         doc.setFont(undefined, 'bold');
-        doc.text('Invoice History:', 15, y);
-        y += 7;
-        doc.setFontSize(9);
+        
+        // Financial Summary Box
+        doc.setFillColor(240, 248, 255); // Light blue background
+        doc.rect(10, y - 5, 190, 55, 'F');
+        doc.setDrawColor(52, 152, 219);
+        doc.rect(10, y - 5, 190, 55);
+        
+        doc.setTextColor(41, 128, 185);
+        doc.text('PROJECT FINANCIAL SUMMARY', 15, y);
+        y += 8;
+        
+        doc.setFontSize(10);
+        doc.setTextColor(0, 0, 0);
         doc.setFont(undefined, 'normal');
         
-        project.invoices.forEach(inv => {
-            doc.text(`${inv.number} - ${inv.type} - $${inv.amount.toFixed(2)} - ${inv.date}`, 15, y);
+        // Calculate project totals
+        const originalEstimate = calculateProjectCost(project);
+        const changeOrderTotal = (project.changeOrders || [])
+            .filter(co => co.status === 'approved')
+            .reduce((sum, co) => sum + co.costImpact, 0);
+        const projectTotal = originalEstimate + changeOrderTotal;
+        const totalPaid = project.totalPaid || 0;
+        const remainingBalance = project.totalInvoiced + invoiceTotal - totalPaid;
+        
+        doc.text(`Original Estimate:`, 15, y);
+        doc.text(`$${originalEstimate.toFixed(2)}`, 180, y, { align: 'right' });
+        y += 5;
+        
+        if (changeOrderTotal > 0) {
+            doc.text(`Approved Change Orders:`, 15, y);
+            doc.text(`+$${changeOrderTotal.toFixed(2)}`, 180, y, { align: 'right' });
             y += 5;
-        });
+        }
         
-        y += 3;
         doc.setFont(undefined, 'bold');
-        doc.text(`Total Previously Invoiced: $${project.totalInvoiced.toFixed(2)}`, 15, y);
-        y += 10;
+        doc.text(`TOTAL PROJECT VALUE:`, 15, y);
+        doc.text(`$${projectTotal.toFixed(2)}`, 180, y, { align: 'right' });
+        y += 7;
         
-        // Payment tracking with details
+        doc.setFont(undefined, 'normal');
+        doc.text(`Amount Invoiced to Date:`, 15, y);
+        doc.text(`$${(project.totalInvoiced + invoiceTotal).toFixed(2)}`, 180, y, { align: 'right' });
+        y += 5;
+        
+        doc.text(`Payments Received:`, 15, y);
+        doc.text(`-$${totalPaid.toFixed(2)}`, 180, y, { align: 'right' });
+        y += 7;
+        
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(220, 53, 69);
+        doc.text(`BALANCE DUE:`, 15, y);
+        doc.text(`$${remainingBalance.toFixed(2)}`, 180, y, { align: 'right' });
+        y += 12;
+        
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        
+        // Breakdown section
+        doc.setFont(undefined, 'bold');
+        doc.text('AMOUNT BREAKDOWN:', 15, y);
+        y += 6;
+        doc.setFont(undefined, 'normal');
+        
+        doc.text(`This Invoice:`, 15, y);
+        doc.text(`$${invoiceTotal.toFixed(2)}`, 180, y, { align: 'right' });
+        y += 5;
+        
+        const previousUnpaid = project.totalInvoiced - totalPaid;
+        if (previousUnpaid > 0) {
+            doc.text(`Previous Balance:`, 15, y);
+            doc.text(`$${previousUnpaid.toFixed(2)}`, 180, y, { align: 'right' });
+            y += 5;
+        }
+        
+        doc.line(15, y, 195, y);
+        y += 6;
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(220, 53, 69);
+        doc.text(`TOTAL DUE NOW:`, 15, y);
+        doc.text(`$${remainingBalance.toFixed(2)}`, 180, y, { align: 'right' });
+        y += 15;
+        
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(10);
+        
+        // Payment tracking (condensed)
         if (project.payments && project.payments.length > 0) {
             doc.setFont(undefined, 'bold');
-            doc.text('Payment History:', 15, y);
+            doc.text('Payments Received:', 15, y);
             y += 6;
             doc.setFont(undefined, 'normal');
             doc.setFontSize(9);
             
-            project.payments.forEach(pmt => {
-                doc.text(`$${pmt.amount.toFixed(2)} - ${pmt.method} - ${pmt.date}`, 15, y);
+            // Show only last 5 payments to keep it concise
+            const recentPayments = project.payments.slice(-5);
+            recentPayments.forEach(pmt => {
+                doc.text(`${pmt.date} - ${pmt.method}`, 15, y);
+                doc.text(`$${pmt.amount.toFixed(2)}`, 180, y, { align: 'right' });
                 y += 4;
             });
+            
+            if (project.payments.length > 5) {
+                y += 2;
+                doc.setFont(undefined, 'italic');
+                doc.text(`(${project.payments.length - 5} earlier payments not shown)`, 15, y);
+                y += 4;
+            }
             
             y += 4;
             doc.setFontSize(10);
             doc.setFont(undefined, 'bold');
-            doc.text(`Total Payments: $${(project.totalPaid || 0).toFixed(2)}`, 15, y);
+            doc.text(`Total Paid:`, 15, y);
+            doc.text(`$${totalPaid.toFixed(2)}`, 180, y, { align: 'right' });
             y += 8;
-        } else {
-            doc.setFont(undefined, 'normal');
-            doc.text(`Payments Received: $${(project.totalPaid || 0).toFixed(2)}`, 15, y);
-            y += 10;
         }
-        
-        // Total now due (including current invoice)
-        const totalNowDue = project.totalInvoiced + invoiceTotal - (project.totalPaid || 0);
-        doc.setFontSize(14);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(231, 76, 60);
-        doc.text(`TOTAL NOW DUE: $${totalNowDue.toFixed(2)}`, 15, y);
     }
     
     // Payment methods
