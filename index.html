@@ -2264,6 +2264,16 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             
+            // Helper function for page breaks
+            function checkPageBreak() {
+                if (y > 270) { // Near bottom of page
+                    doc.addPage();
+                    y = 20; // Reset to top of new page
+                    return true;
+                }
+                return false;
+            }
+            
             // Header (same as add job)
             if (COMPANY_LOGO) {
                 try {
@@ -2304,27 +2314,31 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             y += 7;
             doc.setFont(undefined, 'normal');
             job.tasks.forEach(task => {
+                checkPageBreak(); // Check before each task
                 doc.text(`• ${task.name}`, 17, y);
-                doc.text(`${task.hours} hrs`, 170, y);
                 y += 5;
             });
             y += 5;
+            checkPageBreak();
             const originalJobHours = job.tasks.reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0);
             doc.text(`Original Job Cost: $${(originalJobHours * rate).toFixed(2)}`, 15, y);
             y += 15;
             
+            checkPageBreak();
             // Changes
             doc.setFont(undefined, 'bold');
             doc.text('CHANGES REQUESTED:', 15, y);
             y += 7;
             
             if (addTasks.length > 0) {
+                checkPageBreak();
                 doc.setTextColor(39, 174, 96);
                 doc.text('TASKS TO ADD:', 15, y);
                 y += 6;
                 doc.setFont(undefined, 'normal');
                 doc.setTextColor(0, 0, 0);
                 addTasks.forEach(task => {
+                    checkPageBreak(); // Check before each task
                     const taskCost = (parseFloat(task.hours) || 0) * rate;
                     doc.text(`✅ ${task.name}`, 17, y);
                     doc.text(`$${taskCost.toFixed(2)}`, 170, y);
@@ -2334,6 +2348,7 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             }
             
             if (removeTasks.length > 0) {
+                checkPageBreak();
                 doc.setFont(undefined, 'bold');
                 doc.setTextColor(231, 76, 60);
                 doc.text('TASKS TO REMOVE:', 15, y);
@@ -2341,6 +2356,7 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
                 doc.setFont(undefined, 'normal');
                 doc.setTextColor(0, 0, 0);
                 removeTasks.forEach(task => {
+                    checkPageBreak(); // Check before each task
                     const taskCost = (parseFloat(task.hours) || 0) * rate;
                     doc.text(`❌ ${task.name}`, 17, y);
                     doc.text(`-$${taskCost.toFixed(2)}`, 170, y);
@@ -2369,6 +2385,12 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             doc.setTextColor(0, 0, 0);
             doc.text(`New Job Total: $${newJobCost.toFixed(2)}`, 15, y);
             y += 20;
+            
+            // Ensure approval section is on same page or new page
+            if (y > 230) {
+                doc.addPage();
+                y = 20;
+            }
             
             // Approval section
             doc.setFontSize(12);
@@ -2848,14 +2870,22 @@ function getAllUninvoicedExpenses(project) {
 }
 
 function generateInvoicePDF() {
-    // Close dialog IMMEDIATELY before doing anything else
+    // Get values BEFORE closing dialog
+    const type = document.getElementById('invoiceType')?.value;
+    const percent = document.getElementById('percentComplete')?.value;
+    
+    if (!type) {
+        alert('Please select an invoice type');
+        return;
+    }
+    
+    // Close dialog IMMEDIATELY after getting values
     const dialogElement = document.querySelector('div[style*="position: fixed"]');
     if (dialogElement) {
         dialogElement.remove();
         diagLog('Dialog closed', 'info');
     }
     
-    const type = document.getElementById('invoiceType').value;
     const project = state.currentProject;
     
     if (typeof window.jspdf === 'undefined') {
@@ -2963,13 +2993,13 @@ function generateInvoicePDF() {
             expense.invoiceNumber = invoiceNumber;
         });
     } else if (type === 'progress') {
-        const percent = parseFloat(document.getElementById('percentComplete').value) || 0;
+        const percentValue = parseFloat(percent) || 0;
         const totalLabor = calculateProjectCost(project);
-        const laborDue = (totalLabor * percent / 100) - (project.laborInvoiced || 0);
+        const laborDue = (totalLabor * percentValue / 100) - (project.laborInvoiced || 0);
         
         doc.setFontSize(11);
         doc.setFont(undefined, 'bold');
-        doc.text(`Progress Payment (${percent}% complete)`, 15, y);
+        doc.text(`Progress Payment (${percentValue}% complete)`, 15, y);
         y += 10;
         doc.setFont(undefined, 'normal');
         doc.setFontSize(10);
@@ -3170,9 +3200,9 @@ function generateInvoicePDF() {
     // Track labor amount for this invoice
     let laborAmount = 0;
     if (type === 'progress') {
-        const percent = parseFloat(document.getElementById('percentComplete').value) || 0;
+        const percentValue = parseFloat(percent) || 0;
         const totalLabor = calculateProjectCost(project);
-        laborAmount = (totalLabor * percent / 100) - (project.laborInvoiced || 0);
+        laborAmount = (totalLabor * percentValue / 100) - (project.laborInvoiced || 0);
     } else if (type === 'final') {
         const totalLabor = calculateProjectCost(project);
         laborAmount = totalLabor - (project.laborInvoiced || 0);
