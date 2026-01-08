@@ -784,6 +784,73 @@
                             </div>
                         ` : ''}
                         
+                        <!-- Change Orders Section -->
+                        ${project.jobs.length > 0 ? `
+                            <div class="card" style="border-left: 6px solid #e67e22;">
+                                <h3 style="margin-bottom: 16px;">📝 Change Orders</h3>
+                                
+                                ${(project.changeOrders && project.changeOrders.length > 0) ? `
+                                    ${project.changeOrders.map((co, idx) => {
+                                        const statusColors = {
+                                            pending: '#f39c12',
+                                            approved: '#27ae60',
+                                            declined: '#e74c3c'
+                                        };
+                                        const statusIcons = {
+                                            pending: '⏳',
+                                            approved: '✅',
+                                            declined: '❌'
+                                        };
+                                        const statusLabels = {
+                                            pending: 'Pending Approval',
+                                            approved: 'Approved',
+                                            declined: 'Declined'
+                                        };
+                                        
+                                        return `
+                                            <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid ${statusColors[co.status]};">
+                                                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                                                    <div style="flex: 1;">
+                                                        <strong style="color: #2c3e50;">${co.number}</strong> - ${co.description}
+                                                        <div style="font-size: 12px; color: #7f8c8d; margin-top: 4px;">
+                                                            ${co.date} • ${statusIcons[co.status]} ${statusLabels[co.status]}
+                                                        </div>
+                                                        <div style="font-size: 14px; font-weight: 600; margin-top: 4px; color: ${co.costImpact >= 0 ? '#27ae60' : '#e74c3c'};">
+                                                            Cost Impact: ${co.costImpact >= 0 ? '+' : ''}$${co.costImpact.toFixed(2)}
+                                                        </div>
+                                                    </div>
+                                                    <div style="display: flex; gap: 4px; flex-direction: column;">
+                                                        ${co.pdfData ? `<button onclick="viewChangeOrderPDF(${idx})" style="background: #3498db; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap;">👁️ View PDF</button>` : ''}
+                                                        ${co.status === 'pending' ? `
+                                                            <button onclick="approveChangeOrder(${idx})" style="background: #27ae60; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap;">✅ Approve</button>
+                                                            <button onclick="declineChangeOrder(${idx})" style="background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap;">❌ Decline</button>
+                                                        ` : ''}
+                                                        <button onclick="deleteChangeOrder(${idx})" style="background: #95a5a6; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; white-space: nowrap;">🗑️ Delete</button>
+                                                    </div>
+                                                </div>
+                                                ${co.type === 'add_job' && co.newJob ? `
+                                                    <div style="font-size: 12px; color: #7f8c8d; margin-top: 8px; padding-top: 8px; border-top: 1px solid #ecf0f1;">
+                                                        <strong>New Job:</strong> ${co.newJob.name} (${co.newJob.tasks.length} tasks)
+                                                    </div>
+                                                ` : ''}
+                                                ${co.type === 'modify_job' ? `
+                                                    <div style="font-size: 12px; color: #7f8c8d; margin-top: 8px; padding-top: 8px; border-top: 1px solid #ecf0f1;">
+                                                        <strong>Modified Job:</strong> ${project.jobs.find(j => j.id === co.jobId)?.name || 'Unknown'}
+                                                        ${co.addedTasks?.length ? `<br>➕ ${co.addedTasks.length} tasks added` : ''}
+                                                        ${co.removedTasks?.length ? `<br>❌ ${co.removedTasks.length} tasks removed` : ''}
+                                                    </div>
+                                                ` : ''}
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                ` : '<div style="padding: 12px; background: #f8f9fa; border-radius: 8px; text-align: center; color: #7f8c8d;">No change orders yet</div>'}
+                                
+                                <button onclick="showCreateChangeOrderDialog()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #e67e22 0%, #d35400 100%); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 12px;">
+                                    ➕ Create Change Order
+                                </button>
+                            </div>
+                        ` : ''}
+                        
                         <!-- Invoice & Payment Tracking -->
                         ${project.phase === PHASES.PROJECT_ACTIVE || project.phase === PHASES.PROJECT_BILLED || project.phase === PHASES.PROJECT_COMPLETE ? `
                             <div class="card">
@@ -958,6 +1025,7 @@
                 invoices: [],
                 payments: [],
                 generatedPDFs: [],
+                changeOrders: [],
                 totalInvoiced: 0,
                 laborInvoiced: 0,
                 totalPaid: 0,
@@ -1570,6 +1638,828 @@ function exportPDF(isChangeOrder = false) {
             diagLog('PDF deleted', 'success');
         }
         
+        // ============================================
+        // CHANGE ORDER SYSTEM
+        // ============================================
+        
+        function showCreateChangeOrderDialog() {
+            const dialog = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;" onclick="this.remove()">
+                    <div style="background: white; border-radius: 16px; padding: 24px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;" onclick="event.stopPropagation()">
+                        <h2 style="margin-bottom: 20px; color: #e67e22;">📝 Create Change Order</h2>
+                        
+                        <div style="margin-bottom: 20px;">
+                            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Change Type</label>
+                            <select id="coType" onchange="updateCOTypeUI()" style="width: 100%; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; font-size: 14px;">
+                                <option value="">Select type...</option>
+                                <option value="add_job">➕ Add New Job</option>
+                                <option value="modify_job">✏️ Modify Existing Job</option>
+                            </select>
+                        </div>
+                        
+                        <div id="coFormArea"></div>
+                        
+                        <div style="display: flex; gap: 12px; margin-top: 20px;">
+                            <button onclick="this.closest('div[style*=fixed]').remove()" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">Cancel</button>
+                            <button id="coNextBtn" onclick="handleCONext()" style="flex: 1; padding: 12px; border: none; border-radius: 8px; background: #e67e22; color: white; font-weight: 600; cursor: pointer;" disabled>Next →</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', dialog);
+        }
+        
+        function updateCOTypeUI() {
+            const type = document.getElementById('coType').value;
+            const formArea = document.getElementById('coFormArea');
+            const nextBtn = document.getElementById('coNextBtn');
+            
+            if (!type) {
+                formArea.innerHTML = '';
+                nextBtn.disabled = true;
+                return;
+            }
+            
+            nextBtn.disabled = false;
+            
+            if (type === 'add_job') {
+                formArea.innerHTML = `
+                    <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; border-left: 4px solid #27ae60;">
+                        <strong>Add New Job</strong>
+                        <p style="font-size: 14px; color: #7f8c8d; margin-top: 4px;">You'll create a completely new job with its own tasks and cost estimate.</p>
+                    </div>
+                `;
+            } else if (type === 'modify_job') {
+                const project = state.currentProject;
+                formArea.innerHTML = `
+                    <div style="margin-bottom: 16px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Select Job to Modify</label>
+                        <select id="coJobSelect" style="width: 100%; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px;">
+                            <option value="">Choose a job...</option>
+                            ${project.jobs.map(job => `<option value="${job.id}">${job.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; border-left: 4px solid #3498db;">
+                        <strong>Modify Job Tasks</strong>
+                        <p style="font-size: 14px; color: #7f8c8d; margin-top: 4px;">You'll add or remove tasks from an existing job.</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function handleCONext() {
+            const type = document.getElementById('coType').value;
+            
+            if (type === 'add_job') {
+                showAddJobCO();
+            } else if (type === 'modify_job') {
+                const jobId = document.getElementById('coJobSelect')?.value;
+                if (!jobId) {
+                    alert('Please select a job to modify');
+                    return;
+                }
+                showModifyJobCO(jobId);
+            }
+        }
+        
+        function showAddJobCO() {
+            const dialog = document.querySelector('div[style*="position: fixed"]');
+            dialog.innerHTML = `
+                <div style="background: white; border-radius: 16px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;" onclick="event.stopPropagation()">
+                    <h2 style="margin-bottom: 20px; color: #e67e22;">➕ Add New Job - Change Order</h2>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Job Name</label>
+                        <input type="text" id="coJobName" placeholder="e.g., Install Backsplash" style="width: 100%; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px;">
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Description</label>
+                        <textarea id="coJobDesc" rows="3" placeholder="Describe the new work..." style="width: 100%; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px;"></textarea>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Tasks</label>
+                        <div id="coTasksList" style="margin-bottom: 12px;"></div>
+                        <button onclick="addCOTask()" style="background: #3498db; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">➕ Add Task</button>
+                        <button onclick="generateCOTasksAI()" style="background: #9b59b6; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-left: 8px;">🤖 Generate with AI</button>
+                    </div>
+                    
+                    <div id="coEstimate" style="background: #d4edda; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                        <strong>Estimated Cost: $0.00</strong>
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px;">
+                        <button onclick="showCreateChangeOrderDialog()" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">← Back</button>
+                        <button onclick="generateAddJobCOPDF()" style="flex: 1; padding: 12px; border: none; border-radius: 8px; background: #e67e22; color: white; font-weight: 600; cursor: pointer;">Generate CO PDF</button>
+                    </div>
+                </div>
+            `;
+            updateCOEstimate();
+        }
+        
+        let coTasks = [];
+        
+        function addCOTask() {
+            const task = { name: '', hours: 0 };
+            coTasks.push(task);
+            renderCOTasks();
+        }
+        
+        function renderCOTasks() {
+            const container = document.getElementById('coTasksList');
+            if (!container) return;
+            
+            container.innerHTML = coTasks.map((task, idx) => `
+                <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
+                    <input type="text" value="${task.name}" onchange="coTasks[${idx}].name = this.value; updateCOEstimate();" placeholder="Task name..." style="flex: 1; padding: 8px; border: 1px solid #ecf0f1; border-radius: 4px;">
+                    <input type="number" value="${task.hours}" step="0.5" onchange="coTasks[${idx}].hours = parseFloat(this.value) || 0; updateCOEstimate();" placeholder="Hours" style="width: 80px; padding: 8px; border: 1px solid #ecf0f1; border-radius: 4px;">
+                    <button onclick="coTasks.splice(${idx}, 1); renderCOTasks(); updateCOEstimate();" style="background: #e74c3c; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer;">🗑️</button>
+                </div>
+            `).join('');
+            
+            updateCOEstimate();
+        }
+        
+        function updateCOEstimate() {
+            const totalHours = coTasks.reduce((sum, task) => sum + (parseFloat(task.hours) || 0), 0);
+            const cost = totalHours * parseFloat(state.currentProject.hourlyRate || 0);
+            
+            const estimateEl = document.getElementById('coEstimate');
+            if (estimateEl) {
+                estimateEl.innerHTML = `<strong>Estimated Cost: $${cost.toFixed(2)}</strong> (${totalHours.toFixed(1)} hours @ $${state.currentProject.hourlyRate}/hr)`;
+            }
+        }
+        
+        async function generateCOTasksAI() {
+            const jobName = document.getElementById('coJobName').value;
+            const jobDesc = document.getElementById('coJobDesc').value;
+            
+            if (!jobName) {
+                alert('Please enter a job name first');
+                return;
+            }
+            
+            if (!state.settings.apiKey) {
+                alert('Please add your Gemini API key in Settings');
+                return;
+            }
+            
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = '⏳ Generating...';
+            
+            try {
+                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=' + state.settings.apiKey, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: `Generate a detailed task list for this contracting job:
+Job: ${jobName}
+Description: ${jobDesc || 'No additional description'}
+
+Return ONLY a JSON array of tasks with "name" and "hours" (estimated hours as decimal). Example:
+[{"name":"Purchase materials","hours":1.5},{"name":"Prep area","hours":2.0}]
+
+Be specific and realistic with hours. Include prep, execution, and cleanup tasks.`
+                            }]
+                        }]
+                    })
+                });
+                
+                const data = await response.json();
+                const text = data.candidates[0].content.parts[0].text;
+                const jsonMatch = text.match(/\[[\s\S]*\]/);
+                
+                if (jsonMatch) {
+                    const tasks = JSON.parse(jsonMatch[0]);
+                    coTasks = tasks;
+                    renderCOTasks();
+                    diagLog(`Generated ${tasks.length} tasks with AI`, 'success');
+                } else {
+                    throw new Error('Could not parse AI response');
+                }
+            } catch (error) {
+                alert('AI generation failed: ' + error.message);
+                diagLog('AI error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = '🤖 Generate with AI';
+            }
+        }
+        
+        function generateAddJobCOPDF() {
+            const jobName = document.getElementById('coJobName').value;
+            const jobDesc = document.getElementById('coJobDesc').value;
+            
+            if (!jobName || coTasks.length === 0) {
+                alert('Please enter job name and add at least one task');
+                return;
+            }
+            
+            const project = state.currentProject;
+            const totalHours = coTasks.reduce((sum, task) => sum + (parseFloat(task.hours) || 0), 0);
+            const cost = totalHours * parseFloat(project.hourlyRate);
+            
+            // Create change order record
+            if (!project.changeOrders) project.changeOrders = [];
+            const coNumber = 'CO-' + String(project.changeOrders.length + 1).padStart(3, '0');
+            
+            // Generate PDF
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Header
+            if (COMPANY_LOGO) {
+                try {
+                    doc.addImage(COMPANY_LOGO, 'JPEG', 15, 10, 60, 18);
+                } catch(e) {}
+            }
+            
+            doc.setFontSize(10);
+            doc.setTextColor(52, 73, 94);
+            doc.text(state.settings.companyEmail, 80, 15);
+            doc.text(state.settings.companyPhone || '920-650-8300', 80, 20);
+            
+            // Title
+            doc.setFontSize(24);
+            doc.setTextColor(230, 126, 34);
+            doc.text('CHANGE ORDER', 15, 40);
+            
+            doc.setFontSize(12);
+            doc.setTextColor(0, 0, 0);
+            doc.text(`${coNumber}`, 15, 48);
+            doc.setFontSize(10);
+            doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, 54);
+            doc.text(`Project: ${project.name}`, 15, 59);
+            doc.text(`Status: Pending Approval`, 15, 64);
+            
+            let y = 75;
+            
+            // Description
+            doc.setFont(undefined, 'bold');
+            doc.text('CHANGE DESCRIPTION:', 15, y);
+            y += 7;
+            doc.setFont(undefined, 'normal');
+            doc.text(`Add new job: ${jobName}`, 15, y);
+            y += 5;
+            if (jobDesc) {
+                const descLines = doc.splitTextToSize(jobDesc, 175);
+                doc.text(descLines, 15, y);
+                y += descLines.length * 5;
+            }
+            y += 10;
+            
+            // Original scope
+            const originalCost = calculateProjectCost(project);
+            doc.setFont(undefined, 'bold');
+            doc.text('ORIGINAL PROJECT SCOPE:', 15, y);
+            y += 7;
+            doc.setFont(undefined, 'normal');
+            doc.text(`Total Estimated Cost: $${originalCost.toFixed(2)}`, 15, y);
+            y += 15;
+            
+            // Added work
+            doc.setFont(undefined, 'bold');
+            doc.text('ADDITIONAL WORK:', 15, y);
+            y += 7;
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(11);
+            doc.text(`Job: ${jobName}`, 15, y);
+            y += 7;
+            
+            doc.setFontSize(10);
+            coTasks.forEach(task => {
+                doc.text(`• ${task.name}`, 17, y);
+                doc.text(`${task.hours.toFixed(1)} hrs`, 170, y);
+                y += 5;
+            });
+            
+            y += 5;
+            doc.setFont(undefined, 'bold');
+            doc.text(`Total Hours: ${totalHours.toFixed(1)} hrs @ $${project.hourlyRate}/hr`, 15, y);
+            y += 6;
+            doc.setFontSize(12);
+            doc.setTextColor(39, 174, 96);
+            doc.text(`Additional Cost: $${cost.toFixed(2)}`, 15, y);
+            y += 15;
+            
+            // New total
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            const newTotal = originalCost + cost;
+            doc.text(`NEW PROJECT TOTAL: $${newTotal.toFixed(2)}`, 15, y);
+            y += 7;
+            doc.text(`Change Impact: +$${cost.toFixed(2)}`, 15, y);
+            y += 20;
+            
+            // Approval section
+            doc.setFontSize(12);
+            doc.text('CUSTOMER APPROVAL:', 15, y);
+            y += 10;
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(10);
+            doc.rect(15, y, 5, 5);
+            doc.text('I approve this change order', 25, y + 4);
+            y += 10;
+            doc.rect(15, y, 5, 5);
+            doc.text('I decline this change order', 25, y + 4);
+            y += 15;
+            
+            doc.text('Signature: _________________________', 15, y);
+            y += 10;
+            doc.text('Date: _________________________', 15, y);
+            
+            // Convert to base64 and store
+            const pdfBlob = doc.output('blob');
+            const reader = new FileReader();
+            reader.onload = function() {
+                const base64PDF = reader.result;
+                
+                // Create change order record
+                const newJob = {
+                    id: Date.now().toString(),
+                    name: jobName,
+                    description: jobDesc,
+                    tasks: coTasks.map(t => ({ ...t, completed: false })),
+                    photos: [],
+                    expenses: []
+                };
+                
+                const changeOrder = {
+                    id: Date.now().toString(),
+                    number: coNumber,
+                    date: new Date().toLocaleDateString(),
+                    status: 'pending',
+                    type: 'add_job',
+                    description: `Add new job: ${jobName}`,
+                    newJob: newJob,
+                    costImpact: cost,
+                    originalTotal: originalCost,
+                    newTotal: newTotal,
+                    pdfData: base64PDF
+                };
+                
+                project.changeOrders.push(changeOrder);
+                
+                // Also add to generated PDFs
+                if (!project.generatedPDFs) project.generatedPDFs = [];
+                project.generatedPDFs.push({
+                    number: coNumber,
+                    type: 'Change Order',
+                    filename: `${coNumber}-${project.name.replace(/\s+/g, '-')}.pdf`,
+                    date: new Date().toLocaleDateString(),
+                    timestamp: Date.now(),
+                    data: base64PDF
+                });
+                
+                saveData();
+                render();
+                diagLog(`Change order ${coNumber} created`, 'success');
+                
+                // Reset
+                coTasks = [];
+            };
+            reader.readAsDataURL(pdfBlob);
+            
+            // Close dialog
+            document.querySelector('div[style*="position: fixed"]').remove();
+            
+            // Download PDF
+            doc.save(`${coNumber}-${project.name.replace(/\s+/g, '-')}.pdf`);
+        }
+        
+        function showModifyJobCO(jobId) {
+            const project = state.currentProject;
+            const job = project.jobs.find(j => j.id === jobId);
+            
+            const dialog = document.querySelector('div[style*="position: fixed"]');
+            dialog.innerHTML = `
+                <div style="background: white; border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto;" onclick="event.stopPropagation()">
+                    <h2 style="margin-bottom: 20px; color: #e67e22;">✏️ Modify Job - Change Order</h2>
+                    
+                    <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                        <strong>Job:</strong> ${job.name}
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Current Tasks</label>
+                        ${job.tasks.map((task, idx) => `
+                            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px; padding: 8px; background: white; border: 1px solid #ecf0f1; border-radius: 4px;">
+                                <input type="checkbox" id="removeTask${idx}" style="cursor: pointer;">
+                                <label for="removeTask${idx}" style="flex: 1; cursor: pointer;">${task.name} - ${task.hours} hrs</label>
+                            </div>
+                        `).join('')}
+                        <button onclick="markTasksForRemoval()" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-top: 8px;">❌ Mark Selected for Removal</button>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Tasks to Add</label>
+                        <div id="coAddTasksList"></div>
+                        <button onclick="addCOModifyTask()" style="background: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">➕ Add Task</button>
+                    </div>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Tasks to Remove</label>
+                        <div id="coRemoveTasksList">None selected</div>
+                    </div>
+                    
+                    <div id="coModifyEstimate" style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                        <strong>Cost Impact: $0.00</strong>
+                    </div>
+                    
+                    <div style="display: flex; gap: 12px;">
+                        <button onclick="showCreateChangeOrderDialog()" style="flex: 1; padding: 12px; border: 2px solid #ecf0f1; border-radius: 8px; background: white; cursor: pointer;">← Back</button>
+                        <button onclick="generateModifyJobCOPDF('${jobId}')" style="flex: 1; padding: 12px; border: none; border-radius: 8px; background: #e67e22; color: white; font-weight: 600; cursor: pointer;">Generate CO PDF</button>
+                    </div>
+                </div>
+            `;
+            
+            window.coModifyJobId = jobId;
+            window.coAddTasks = [];
+            window.coRemoveTasks = [];
+            updateModifyCOEstimate();
+        }
+        
+        function addCOModifyTask() {
+            if (!window.coAddTasks) window.coAddTasks = [];
+            window.coAddTasks.push({ name: '', hours: 0 });
+            renderCOModifyTasks();
+        }
+        
+        function renderCOModifyTasks() {
+            const container = document.getElementById('coAddTasksList');
+            if (!container) return;
+            
+            container.innerHTML = window.coAddTasks.map((task, idx) => `
+                <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
+                    <input type="text" value="${task.name}" onchange="window.coAddTasks[${idx}].name = this.value; updateModifyCOEstimate();" placeholder="Task name..." style="flex: 1; padding: 8px; border: 1px solid #ecf0f1; border-radius: 4px;">
+                    <input type="number" value="${task.hours}" step="0.5" onchange="window.coAddTasks[${idx}].hours = parseFloat(this.value) || 0; updateModifyCOEstimate();" placeholder="Hours" style="width: 80px; padding: 8px; border: 1px solid #ecf0f1; border-radius: 4px;">
+                    <button onclick="window.coAddTasks.splice(${idx}, 1); renderCOModifyTasks(); updateModifyCOEstimate();" style="background: #e74c3c; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer;">🗑️</button>
+                </div>
+            `).join('');
+            
+            updateModifyCOEstimate();
+        }
+        
+        function markTasksForRemoval() {
+            const project = state.currentProject;
+            const job = project.jobs.find(j => j.id === window.coModifyJobId);
+            
+            window.coRemoveTasks = job.tasks.filter((task, idx) => {
+                return document.getElementById(`removeTask${idx}`)?.checked;
+            });
+            
+            const container = document.getElementById('coRemoveTasksList');
+            if (window.coRemoveTasks.length === 0) {
+                container.innerHTML = 'None selected';
+            } else {
+                container.innerHTML = window.coRemoveTasks.map(task => 
+                    `<div style="padding: 8px; background: #fee; border-left: 4px solid #e74c3c; margin-bottom: 4px;">❌ ${task.name} - ${task.hours} hrs</div>`
+                ).join('');
+            }
+            
+            updateModifyCOEstimate();
+        }
+        
+        function updateModifyCOEstimate() {
+            const rate = parseFloat(state.currentProject.hourlyRate || 0);
+            const addHours = (window.coAddTasks || []).reduce((sum, task) => sum + (parseFloat(task.hours) || 0), 0);
+            const removeHours = (window.coRemoveTasks || []).reduce((sum, task) => sum + (parseFloat(task.hours) || 0), 0);
+            
+            const addCost = addHours * rate;
+            const removeCost = removeHours * rate;
+            const netCost = addCost - removeCost;
+            
+            const estimateEl = document.getElementById('coModifyEstimate');
+            if (estimateEl) {
+                estimateEl.innerHTML = `
+                    <strong>Cost Impact:</strong><br>
+                    Added work: +$${addCost.toFixed(2)} (${addHours.toFixed(1)} hrs)<br>
+                    Removed work: -$${removeCost.toFixed(2)} (${removeHours.toFixed(1)} hrs)<br>
+                    <strong style="color: ${netCost >= 0 ? '#27ae60' : '#e74c3c'};">Net Change: ${netCost >= 0 ? '+' : ''}$${netCost.toFixed(2)}</strong>
+                `;
+            }
+        }
+        
+        function generateModifyJobCOPDF(jobId) {
+            const project = state.currentProject;
+            const job = project.jobs.find(j => j.id === jobId);
+            const addTasks = window.coAddTasks || [];
+            const removeTasks = window.coRemoveTasks || [];
+            
+            if (addTasks.length === 0 && removeTasks.length === 0) {
+                alert('Please add or remove at least one task');
+                return;
+            }
+            
+            const rate = parseFloat(project.hourlyRate);
+            const addHours = addTasks.reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0);
+            const removeHours = removeTasks.reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0);
+            const addCost = addHours * rate;
+            const removeCost = removeHours * rate;
+            const netCost = addCost - removeCost;
+            
+            // Create change order
+            if (!project.changeOrders) project.changeOrders = [];
+            const coNumber = 'CO-' + String(project.changeOrders.length + 1).padStart(3, '0');
+            
+            // Generate PDF
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Header (same as add job)
+            if (COMPANY_LOGO) {
+                try {
+                    doc.addImage(COMPANY_LOGO, 'JPEG', 15, 10, 60, 18);
+                } catch(e) {}
+            }
+            
+            doc.setFontSize(10);
+            doc.setTextColor(52, 73, 94);
+            doc.text(state.settings.companyEmail, 80, 15);
+            doc.text(state.settings.companyPhone || '920-650-8300', 80, 20);
+            
+            doc.setFontSize(24);
+            doc.setTextColor(230, 126, 34);
+            doc.text('CHANGE ORDER', 15, 40);
+            
+            doc.setFontSize(12);
+            doc.setTextColor(0, 0, 0);
+            doc.text(`${coNumber}`, 15, 48);
+            doc.setFontSize(10);
+            doc.text(`Date: ${new Date().toLocaleDateString()}`, 15, 54);
+            doc.text(`Project: ${project.name}`, 15, 59);
+            doc.text(`Status: Pending Approval`, 15, 64);
+            
+            let y = 75;
+            
+            // Description
+            doc.setFont(undefined, 'bold');
+            doc.text('CHANGE DESCRIPTION:', 15, y);
+            y += 7;
+            doc.setFont(undefined, 'normal');
+            doc.text(`Modify job: ${job.name}`, 15, y);
+            y += 15;
+            
+            // Original tasks
+            doc.setFont(undefined, 'bold');
+            doc.text('ORIGINAL JOB TASKS:', 15, y);
+            y += 7;
+            doc.setFont(undefined, 'normal');
+            job.tasks.forEach(task => {
+                doc.text(`• ${task.name}`, 17, y);
+                doc.text(`${task.hours} hrs`, 170, y);
+                y += 5;
+            });
+            y += 5;
+            const originalJobHours = job.tasks.reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0);
+            doc.text(`Original Job Cost: $${(originalJobHours * rate).toFixed(2)}`, 15, y);
+            y += 15;
+            
+            // Changes
+            doc.setFont(undefined, 'bold');
+            doc.text('CHANGES REQUESTED:', 15, y);
+            y += 7;
+            
+            if (addTasks.length > 0) {
+                doc.setTextColor(39, 174, 96);
+                doc.text('TASKS TO ADD:', 15, y);
+                y += 6;
+                doc.setFont(undefined, 'normal');
+                doc.setTextColor(0, 0, 0);
+                addTasks.forEach(task => {
+                    doc.text(`✅ ${task.name}`, 17, y);
+                    doc.text(`${task.hours} hrs`, 170, y);
+                    y += 5;
+                });
+                y += 5;
+            }
+            
+            if (removeTasks.length > 0) {
+                doc.setFont(undefined, 'bold');
+                doc.setTextColor(231, 76, 60);
+                doc.text('TASKS TO REMOVE:', 15, y);
+                y += 6;
+                doc.setFont(undefined, 'normal');
+                doc.setTextColor(0, 0, 0);
+                removeTasks.forEach(task => {
+                    doc.text(`❌ ${task.name}`, 17, y);
+                    doc.text(`${task.hours} hrs`, 170, y);
+                    y += 5;
+                });
+                y += 5;
+            }
+            
+            y += 5;
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(0, 0, 0);
+            doc.text('COST IMPACT:', 15, y);
+            y += 7;
+            doc.setFont(undefined, 'normal');
+            doc.text(`Added work: +$${addCost.toFixed(2)} (${addHours.toFixed(1)} hrs)`, 15, y);
+            y += 6;
+            doc.text(`Removed work: -$${removeCost.toFixed(2)} (${removeHours.toFixed(1)} hrs)`, 15, y);
+            y += 8;
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.setTextColor(netCost >= 0 ? 39 : 231, netCost >= 0 ? 174 : 76, netCost >= 0 ? 96 : 60);
+            doc.text(`Net Change: ${netCost >= 0 ? '+' : ''}$${netCost.toFixed(2)}`, 15, y);
+            y += 10;
+            
+            const newJobCost = (originalJobHours * rate) + netCost;
+            doc.setTextColor(0, 0, 0);
+            doc.text(`New Job Total: $${newJobCost.toFixed(2)}`, 15, y);
+            y += 20;
+            
+            // Approval section
+            doc.setFontSize(12);
+            doc.text('CUSTOMER APPROVAL:', 15, y);
+            y += 10;
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(10);
+            doc.rect(15, y, 5, 5);
+            doc.text('I approve this change order', 25, y + 4);
+            y += 10;
+            doc.rect(15, y, 5, 5);
+            doc.text('I decline this change order', 25, y + 4);
+            y += 15;
+            
+            doc.text('Signature: _________________________', 15, y);
+            y += 10;
+            doc.text('Date: _________________________', 15, y);
+            
+            // Store PDF and create CO record
+            const pdfBlob = doc.output('blob');
+            const reader = new FileReader();
+            reader.onload = function() {
+                const base64PDF = reader.result;
+                
+                const changeOrder = {
+                    id: Date.now().toString(),
+                    number: coNumber,
+                    date: new Date().toLocaleDateString(),
+                    status: 'pending',
+                    type: 'modify_job',
+                    description: `Modify job: ${job.name}`,
+                    jobId: jobId,
+                    addedTasks: addTasks,
+                    removedTasks: removeTasks,
+                    costImpact: netCost,
+                    originalTotal: calculateProjectCost(project),
+                    newTotal: calculateProjectCost(project) + netCost,
+                    pdfData: base64PDF
+                };
+                
+                project.changeOrders.push(changeOrder);
+                
+                // Add to generated PDFs
+                if (!project.generatedPDFs) project.generatedPDFs = [];
+                project.generatedPDFs.push({
+                    number: coNumber,
+                    type: 'Change Order',
+                    filename: `${coNumber}-${project.name.replace(/\s+/g, '-')}.pdf`,
+                    date: new Date().toLocaleDateString(),
+                    timestamp: Date.now(),
+                    data: base64PDF
+                });
+                
+                saveData();
+                render();
+                diagLog(`Change order ${coNumber} created`, 'success');
+                
+                // Reset
+                window.coAddTasks = [];
+                window.coRemoveTasks = [];
+            };
+            reader.readAsDataURL(pdfBlob);
+            
+            // Close dialog
+            document.querySelector('div[style*="position: fixed"]').remove();
+            
+            // Download PDF
+            doc.save(`${coNumber}-${project.name.replace(/\s+/g, '-')}.pdf`);
+        }
+        
+        function viewChangeOrderPDF(index) {
+            const co = state.currentProject.changeOrders[index];
+            
+            const modal = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 10001; display: flex; flex-direction: column;" onclick="this.remove()">
+                    <div style="padding: 20px; background: #2c3e50; color: white; display: flex; justify-content: space-between; align-items: center;">
+                        <h2 style="margin: 0;">${co.number} - ${co.description}</h2>
+                        <button onclick="event.stopPropagation(); this.closest('div[style*=fixed]').remove();" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600;">✕ Close</button>
+                    </div>
+                    <iframe src="${co.pdfData}" style="flex: 1; border: none; background: white;" onclick="event.stopPropagation()"></iframe>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modal);
+        }
+        
+        function approveChangeOrder(index) {
+            if (!confirm('Approve this change order? The changes will be applied to the project.')) {
+                return;
+            }
+            
+            const project = state.currentProject;
+            const co = project.changeOrders[index];
+            
+            co.status = 'approved';
+            co.approvedDate = new Date().toLocaleDateString();
+            
+            // Apply changes
+            if (co.type === 'add_job') {
+                project.jobs.push(co.newJob);
+                diagLog(`Job "${co.newJob.name}" added to project`, 'success');
+            } else if (co.type === 'modify_job') {
+                const job = project.jobs.find(j => j.id === co.jobId);
+                if (job) {
+                    // Remove tasks
+                    co.removedTasks.forEach(removeTask => {
+                        const idx = job.tasks.findIndex(t => t.name === removeTask.name && t.hours === removeTask.hours);
+                        if (idx >= 0) job.tasks.splice(idx, 1);
+                    });
+                    // Add tasks
+                    co.addedTasks.forEach(addTask => {
+                        job.tasks.push({ ...addTask, completed: false });
+                    });
+                    diagLog(`Job "${job.name}" modified`, 'success');
+                }
+            }
+            
+            saveData();
+            render();
+        }
+        
+        function declineChangeOrder(index) {
+            if (!confirm('Decline this change order?')) {
+                return;
+            }
+            
+            const co = state.currentProject.changeOrders[index];
+            co.status = 'declined';
+            co.declinedDate = new Date().toLocaleDateString();
+            
+            saveData();
+            render();
+            diagLog(`Change order ${co.number} declined`, 'warning');
+        }
+        
+        function deleteChangeOrder(index) {
+            if (!confirm('Delete this change order?')) {
+                return;
+            }
+            
+            const project = state.currentProject;
+            const co = project.changeOrders[index];
+            
+            // If it was approved, ask if they want to revert changes
+            if (co.status === 'approved') {
+                if (confirm('This change order was approved. Do you want to revert the changes to the project?')) {
+                    if (co.type === 'add_job') {
+                        const jobIdx = project.jobs.findIndex(j => j.id === co.newJob.id);
+                        if (jobIdx >= 0) {
+                            project.jobs.splice(jobIdx, 1);
+                            diagLog('Job removed from project', 'info');
+                        }
+                    } else if (co.type === 'modify_job') {
+                        const job = project.jobs.find(j => j.id === co.jobId);
+                        if (job) {
+                            // Re-add removed tasks
+                            co.removedTasks.forEach(task => {
+                                job.tasks.push({ ...task });
+                            });
+                            // Remove added tasks
+                            co.addedTasks.forEach(addTask => {
+                                const idx = job.tasks.findIndex(t => t.name === addTask.name);
+                                if (idx >= 0) job.tasks.splice(idx, 1);
+                            });
+                            diagLog('Job changes reverted', 'info');
+                        }
+                    }
+                }
+            }
+            
+            // Delete the change order
+            project.changeOrders.splice(index, 1);
+            
+            // Also remove from generated PDFs if it exists
+            if (project.generatedPDFs) {
+                const pdfIdx = project.generatedPDFs.findIndex(pdf => pdf.number === co.number);
+                if (pdfIdx >= 0) {
+                    project.generatedPDFs.splice(pdfIdx, 1);
+                }
+            }
+            
+            saveData();
+            render();
+            diagLog(`Change order ${co.number} deleted`, 'success');
+        }
+        
         function recordPayment() {
             const amount = parseFloat(document.getElementById('paymentAmount').value);
             const method = document.getElementById('paymentMethod').value;
@@ -1730,6 +2620,7 @@ function showInvoiceDialog() {
                         <option value="materials">Materials Reimbursement</option>
                         <option value="progress">Progress Payment</option>
                         <option value="final">Final Payment</option>
+                        <option value="change_order">Change Order</option>
                     </select>
                 </div>
                 
@@ -1828,6 +2719,19 @@ function updateInvoicePreview() {
         if (expenseTotal > 0) html += `Uninvoiced Materials: +$${expenseTotal.toFixed(2)}<br>`;
         if (depositTotal > 0) html += `Deposit Applied: -$${depositTotal.toFixed(2)}<br>`;
         html += `<br><strong style="color: #27ae60;">Balance Due: $${total.toFixed(2)}</strong>`;
+    } else if (type === 'change_order') {
+        const approvedCOs = (project.changeOrders || []).filter(co => co.status === 'approved');
+        if (approvedCOs.length === 0) {
+            html += '<strong style="color: #e74c3c;">No approved change orders to invoice</strong>';
+        } else {
+            html += '<strong>Approved Change Orders:</strong><br>';
+            let total = 0;
+            approvedCOs.forEach(co => {
+                html += `• ${co.number} - ${co.description}: $${co.costImpact.toFixed(2)}<br>`;
+                total += co.costImpact;
+            });
+            html += `<br><strong>Total: $${total.toFixed(2)}</strong>`;
+        }
     }
     
     html += '</div>';
@@ -1849,6 +2753,13 @@ function getAllUninvoicedExpenses(project) {
 }
 
 function generateInvoicePDF() {
+    // Close dialog IMMEDIATELY before doing anything else
+    const dialogElement = document.querySelector('div[style*="position: fixed"]');
+    if (dialogElement) {
+        dialogElement.remove();
+        diagLog('Dialog closed', 'info');
+    }
+    
     const type = document.getElementById('invoiceType').value;
     const project = state.currentProject;
     
@@ -2210,10 +3121,6 @@ function generateInvoicePDF() {
         diagLog(`PDF stored: ${invoiceNumber}`, 'success');
     };
     reader.readAsDataURL(pdfBlob);
-    
-    // Close dialog IMMEDIATELY
-    const dialog = document.querySelector('div[style*="position: fixed"]');
-    if (dialog) dialog.remove();
     
     // Save PDF to downloads
     doc.save(`${invoiceNumber}-${project.name.replace(/\s+/g, '-')}.pdf`);
