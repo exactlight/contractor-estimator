@@ -406,6 +406,25 @@
                 return { usedMB: '?', percentage: '?' };
             }
         }
+        
+        // Calculate logo dimensions maintaining aspect ratio
+        function getLogoDimensions(logoDataUrl, maxWidth = 60, maxHeight = 20) {
+            // Create temporary image to get dimensions
+            const img = new Image();
+            img.src = logoDataUrl;
+            
+            const aspectRatio = img.width / img.height;
+            let width = maxWidth;
+            let height = width / aspectRatio;
+            
+            // If height exceeds max, scale by height instead
+            if (height > maxHeight) {
+                height = maxHeight;
+                width = height * aspectRatio;
+            }
+            
+            return { width, height };
+        }
 
         // Render functions
         function render() {
@@ -1995,13 +2014,14 @@ function exportPDF(isChangeOrder = false) {
     const doc = new jsPDF();
     const project = state.currentProject;
     
-    // Add logo with correct aspect ratio (wider, not tall)
+    // Add logo with correct aspect ratio
     if (COMPANY_LOGO) {
         try {
             // Use custom logo if available, otherwise use default
             const logoToUse = state.settings.companyLogo || COMPANY_LOGO;
             if (logoToUse) {
-                doc.addImage(logoToUse, 'JPEG', 15, 10, 60, 18); // Wider logo
+                const dims = getLogoDimensions(logoToUse, 60, 20);
+                doc.addImage(logoToUse, 'JPEG', 15, 10, dims.width, dims.height);
             }
         } catch(e) {
             diagLog('Logo error: ' + e.message, 'warning');
@@ -2586,7 +2606,8 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             const logoToUse = state.settings.companyLogo || COMPANY_LOGO;
             if (logoToUse) {
                 try {
-                    doc.addImage(logoToUse, 'JPEG', 15, 10, 60, 18);
+                    const dims = getLogoDimensions(logoToUse, 60, 20);
+                    doc.addImage(logoToUse, 'JPEG', 15, 10, dims.width, dims.height);
                 } catch(e) {}
             }
             
@@ -2908,7 +2929,8 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             const logoToUse = state.settings.companyLogo || COMPANY_LOGO;
             if (logoToUse) {
                 try {
-                    doc.addImage(logoToUse, 'JPEG', 15, 10, 60, 18);
+                    const dims = getLogoDimensions(logoToUse, 60, 20);
+                    doc.addImage(logoToUse, 'JPEG', 15, 10, dims.width, dims.height);
                 } catch(e) {}
             }
             
@@ -3538,7 +3560,8 @@ function generateInvoicePDF() {
     const logoToUse = state.settings.companyLogo || COMPANY_LOGO;
     if (logoToUse) {
         try {
-            doc.addImage(logoToUse, 'JPEG', 15, 10, 60, 18);
+            const dims = getLogoDimensions(logoToUse, 60, 20);
+            doc.addImage(logoToUse, 'JPEG', 15, 10, dims.width, dims.height);
         } catch(e) {
             console.error('Logo error:', e);
         }
