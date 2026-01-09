@@ -1220,10 +1220,16 @@
             return `
                 <div style="background: white; padding: 20px; margin-bottom: 20px;">
                     <div class="container">
-                        <button onclick="saveAndCloseProject()" 
-                            style="background: #27ae60; border: none; color: white; font-weight: 600; cursor: pointer; margin-bottom: 12px; padding: 8px 16px; border-radius: 6px;">
-                            💾 Save & Close
-                        </button>
+                        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                            <button onclick="saveAndCloseProject()" 
+                                style="flex: 1; background: #27ae60; border: none; color: white; font-weight: 600; cursor: pointer; padding: 12px; border-radius: 6px; font-size: 16px;">
+                                💾 Save & Close
+                            </button>
+                            <button onclick="cancelAndCloseProject()" 
+                                style="flex: 1; background: #95a5a6; border: none; color: white; font-weight: 600; cursor: pointer; padding: 12px; border-radius: 6px; font-size: 16px;">
+                                ✖️ Cancel
+                            </button>
+                        </div>
                         <div style="display: flex; justify-content: space-between; align-items: start;">
                             <div>
                                 <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 4px;">${project.customerName}</p>
@@ -1639,6 +1645,18 @@
                             </button>
                         </div>
                     ` : ''}
+                    
+                    <!-- Bottom action buttons (same as top for convenience) -->
+                    <div style="display: flex; gap: 8px; margin-top: 24px; padding-top: 20px; border-top: 2px solid #ecf0f1;">
+                        <button onclick="saveAndCloseProject()" 
+                            style="flex: 1; background: #27ae60; border: none; color: white; font-weight: 600; cursor: pointer; padding: 14px; border-radius: 6px; font-size: 16px;">
+                            💾 Save & Close
+                        </button>
+                        <button onclick="cancelAndCloseProject()" 
+                            style="flex: 1; background: #95a5a6; border: none; color: white; font-weight: 600; cursor: pointer; padding: 14px; border-radius: 6px; font-size: 16px;">
+                            ✖️ Cancel
+                        </button>
+                    </div>
                 </div>
             `;
         }
@@ -2150,6 +2168,17 @@
                 try {
                     await syncFromGist(true); // Silent load
                     console.log('✅ Latest data loaded');
+                    
+                    // Check if project still exists after sync (might have been deleted on other device)
+                    const projectExists = state.projects.find(p => p.id === id);
+                    if (!projectExists) {
+                        console.log('⚠️ Project was deleted on another device');
+                        alert('This project was deleted on another device.');
+                        state.view = 'list';
+                        state.lastSyncStatus = '🗑️ Project deleted';
+                        render();
+                        return;
+                    }
                 } catch (error) {
                     console.error('Failed to load from Gist:', error);
                     // Continue anyway - use local data
@@ -2157,6 +2186,15 @@
             }
             
             state.currentProject = state.projects.find(p => p.id === id);
+            
+            // Handle case where project doesn't exist locally either
+            if (!state.currentProject) {
+                alert('Project not found.');
+                state.view = 'list';
+                render();
+                return;
+            }
+            
             state.view = 'project';
             render();
         }
@@ -2186,6 +2224,24 @@
             state.view = 'list';
             state.currentProject = null;
             render();
+        }
+        
+        async function cancelAndCloseProject() {
+            // Discard changes: reload projects from localStorage
+            if (confirm('Discard all changes to this project?')) {
+                console.log('❌ Discarding changes, reloading from localStorage');
+                
+                // Reload from localStorage (last saved state)
+                const stored = localStorage.getItem('contractorProjects');
+                if (stored) {
+                    state.projects = JSON.parse(stored);
+                }
+                
+                state.view = 'list';
+                state.currentProject = null;
+                state.lastSyncStatus = '↩️ Changes discarded';
+                render();
+            }
         }
 
         function addJob() {
