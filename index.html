@@ -457,7 +457,11 @@
         }
         
         async function syncFromGist() {
-            if (!state.settings.gistId || !state.settings.gistToken) {
+            // Try to read from form first (if in settings), otherwise use saved state
+            const gistId = document.getElementById('gistId')?.value.trim() || state.settings.gistId;
+            const gistToken = document.getElementById('gistToken')?.value.trim() || state.settings.gistToken;
+            
+            if (!gistId || !gistToken) {
                 alert('Please configure GitHub Gist settings first');
                 return;
             }
@@ -465,9 +469,9 @@
             try {
                 diagLog('Loading from GitHub Gist...', 'info');
                 
-                const response = await fetch(`https://api.github.com/gists/${state.settings.gistId}`, {
+                const response = await fetch(`https://api.github.com/gists/${gistId}`, {
                     headers: {
-                        'Authorization': `token ${state.settings.gistToken}`,
+                        'Authorization': `token ${gistToken}`,
                     }
                 });
                 
@@ -490,7 +494,7 @@
                 // Restore data
                 state.projects = data.projects || [];
                 state.customers = data.customers || [];
-                state.settings = { ...state.settings, ...data.settings };
+                state.settings = { ...state.settings, ...data.settings, gistId, gistToken }; // Keep current credentials
                 
                 // Save to localStorage
                 localStorage.setItem('contractorProjects', JSON.stringify(state.projects));
@@ -512,15 +516,19 @@
         }
         
         async function testGistConnection() {
-            if (!state.settings.gistId || !state.settings.gistToken) {
+            // Read directly from form fields (not saved yet)
+            const gistId = document.getElementById('gistId')?.value.trim();
+            const gistToken = document.getElementById('gistToken')?.value.trim();
+            
+            if (!gistId || !gistToken) {
                 alert('Please enter both Gist ID and Personal Access Token');
                 return;
             }
             
             try {
-                const response = await fetch(`https://api.github.com/gists/${state.settings.gistId}`, {
+                const response = await fetch(`https://api.github.com/gists/${gistId}`, {
                     headers: {
-                        'Authorization': `token ${state.settings.gistToken}`,
+                        'Authorization': `token ${gistToken}`,
                     }
                 });
                 
