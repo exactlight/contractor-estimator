@@ -378,14 +378,24 @@
         // Save to localStorage
         function saveData() {
             try {
+                console.log('saveData() called');
                 localStorage.setItem('contractorProjects', JSON.stringify(state.projects));
                 localStorage.setItem('contractorCustomers', JSON.stringify(state.customers));
                 localStorage.setItem('geminiApiKey', state.settings.apiKey);
                 localStorage.setItem('contractorSettings', JSON.stringify(state.settings));
                 
                 // Auto-sync to GitHub Gist if enabled
+                console.log('Auto-sync check:', {
+                    gistAutoSync: state.settings.gistAutoSync,
+                    gistId: state.settings.gistId,
+                    gistToken: state.settings.gistToken ? 'present' : 'missing'
+                });
+                
                 if (state.settings.gistAutoSync && state.settings.gistId && state.settings.gistToken) {
+                    console.log('🚀 Triggering auto-sync to Gist...');
                     syncToGist();
+                } else {
+                    console.log('Auto-sync not triggered (disabled or not configured)');
                 }
             } catch (error) {
                 if (error.name === 'QuotaExceededError') {
@@ -502,29 +512,40 @@
         async function manualSyncBothWays() {
             // Push local changes, then pull remote changes (smart merge)
             try {
+                console.log('=== MANUAL SYNC STARTED ===');
                 diagLog('Starting two-way sync...', 'info');
                 state.lastSyncStatus = '🔄 Syncing...';
                 render();
                 
                 // First push our local changes
+                console.log('Step 1: Pushing to Gist...');
                 const pushSuccess = await syncToGist();
+                console.log('Push result:', pushSuccess);
                 
                 if (pushSuccess) {
                     // Wait a moment for Gist to process
+                    console.log('Step 2: Waiting 1 second...');
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     
                     // Then load and merge with remote changes (silently)
+                    console.log('Step 3: Loading from Gist...');
                     await syncFromGist(true);
+                    console.log('Step 4: Sync complete!');
                     
                     state.lastSyncStatus = '✅ Synced ' + new Date().toLocaleTimeString();
                     diagLog('Two-way sync complete', 'success');
+                    
+                    // Show success message
+                    alert(`✅ Sync complete!\n\nAll changes synced between devices.`);
                     render();
                 } else {
+                    console.error('Push failed');
                     state.lastSyncStatus = '❌ Sync failed';
-                    alert('❌ Sync failed - could not push to Gist');
+                    alert('❌ Sync failed - could not push to Gist.\n\nCheck Settings to verify Gist ID and Token.');
                     render();
                 }
             } catch (error) {
+                console.error('Sync error:', error);
                 state.lastSyncStatus = '❌ Sync failed';
                 alert('❌ Sync error:\n\n' + error.message);
                 diagLog('Sync error: ' + error.message, 'error');
@@ -684,8 +705,11 @@
                 localStorage.setItem('contractorCustomers', JSON.stringify(state.customers));
                 localStorage.setItem('contractorSettings', JSON.stringify(state.settings));
                 
-                state.view = 'list';
-                state.currentProject = null;
+                // Only change view if not silent (manual load from settings)
+                if (!silent) {
+                    state.view = 'list';
+                    state.currentProject = null;
+                }
                 render();
                 
                 state.lastSyncStatus = '✅ Synced ' + new Date().toLocaleTimeString();
