@@ -408,22 +408,24 @@
         }
         
         // Calculate logo dimensions maintaining aspect ratio
-        function getLogoDimensions(logoDataUrl, maxWidth = 60, maxHeight = 20) {
-            // Create temporary image to get dimensions
-            const img = new Image();
-            img.src = logoDataUrl;
-            
-            const aspectRatio = img.width / img.height;
-            let width = maxWidth;
-            let height = width / aspectRatio;
-            
-            // If height exceeds max, scale by height instead
-            if (height > maxHeight) {
-                height = maxHeight;
-                width = height * aspectRatio;
+        function getLogoDimensions(maxWidth = 60, maxHeight = 20) {
+            // Use stored dimensions if available
+            if (state.settings.logoWidth && state.settings.logoHeight) {
+                const aspectRatio = state.settings.logoWidth / state.settings.logoHeight;
+                let width = maxWidth;
+                let height = width / aspectRatio;
+                
+                // If height exceeds max, scale by height instead
+                if (height > maxHeight) {
+                    height = maxHeight;
+                    width = height * aspectRatio;
+                }
+                
+                return { width, height };
             }
             
-            return { width, height };
+            // Fallback to default dimensions (assume 3:1 ratio for landscape)
+            return { width: maxWidth, height: maxHeight };
         }
 
         // Render functions
@@ -1452,15 +1454,20 @@
                             }
                             
                             state.settings.companyLogo = compressedLogo;
+                            // Store original dimensions for aspect ratio preservation
+                            state.settings.logoWidth = width;
+                            state.settings.logoHeight = height;
                             
                             try {
                                 saveData();
                                 render();
-                                diagLog(`Logo uploaded (${Math.round(sizeKB)}KB)`, 'success');
+                                diagLog(`Logo uploaded (${Math.round(sizeKB)}KB, ${width}×${height})`, 'success');
                             } catch (error) {
                                 if (error.name === 'QuotaExceededError') {
                                     alert('⚠️ Storage quota exceeded! Cannot save logo.');
                                     state.settings.companyLogo = '';
+                                    state.settings.logoWidth = 0;
+                                    state.settings.logoHeight = 0;
                                 } else {
                                     throw error;
                                 }
@@ -1477,6 +1484,8 @@
         function removeLogo() {
             if (confirm('Remove company logo?')) {
                 state.settings.companyLogo = '';
+                state.settings.logoWidth = 0;
+                state.settings.logoHeight = 0;
                 saveData();
                 render();
                 diagLog('Logo removed', 'info');
@@ -2020,7 +2029,7 @@ function exportPDF(isChangeOrder = false) {
             // Use custom logo if available, otherwise use default
             const logoToUse = state.settings.companyLogo || COMPANY_LOGO;
             if (logoToUse) {
-                const dims = getLogoDimensions(logoToUse, 60, 20);
+                const dims = getLogoDimensions(60, 20);
                 doc.addImage(logoToUse, 'JPEG', 15, 10, dims.width, dims.height);
             }
         } catch(e) {
@@ -2606,7 +2615,7 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             const logoToUse = state.settings.companyLogo || COMPANY_LOGO;
             if (logoToUse) {
                 try {
-                    const dims = getLogoDimensions(logoToUse, 60, 20);
+                    const dims = getLogoDimensions(60, 20);
                     doc.addImage(logoToUse, 'JPEG', 15, 10, dims.width, dims.height);
                 } catch(e) {}
             }
@@ -2929,7 +2938,7 @@ Be specific and realistic with hours. Include prep, execution, and cleanup tasks
             const logoToUse = state.settings.companyLogo || COMPANY_LOGO;
             if (logoToUse) {
                 try {
-                    const dims = getLogoDimensions(logoToUse, 60, 20);
+                    const dims = getLogoDimensions(60, 20);
                     doc.addImage(logoToUse, 'JPEG', 15, 10, dims.width, dims.height);
                 } catch(e) {}
             }
@@ -3560,7 +3569,7 @@ function generateInvoicePDF() {
     const logoToUse = state.settings.companyLogo || COMPANY_LOGO;
     if (logoToUse) {
         try {
-            const dims = getLogoDimensions(logoToUse, 60, 20);
+            const dims = getLogoDimensions(60, 20);
             doc.addImage(logoToUse, 'JPEG', 15, 10, dims.width, dims.height);
         } catch(e) {
             console.error('Logo error:', e);
