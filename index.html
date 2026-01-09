@@ -346,13 +346,17 @@
             customers: [], // NEW: Customer contact database
             currentProject: null,
             filterPhase: 'all',
+            lastSyncStatus: '', // NEW: Gist sync status
             settings: {
                 apiKey: '',
                 companyName: 'Professional Contracting',
                 companyEmail: 'contact@example.com',
                 companyPhone: '920-650-8300',
                 defaultHourlyRate: '75',
-                companyLogo: '' // NEW: Base64 logo storage
+                companyLogo: '', // NEW: Base64 logo storage
+                gistId: '', // NEW: GitHub Gist ID
+                gistToken: '', // NEW: GitHub Personal Access Token
+                gistAutoSync: false // NEW: Auto-sync enabled
             }
         };
 
@@ -378,6 +382,11 @@
                 localStorage.setItem('contractorCustomers', JSON.stringify(state.customers));
                 localStorage.setItem('geminiApiKey', state.settings.apiKey);
                 localStorage.setItem('contractorSettings', JSON.stringify(state.settings));
+                
+                // Auto-sync to GitHub Gist if enabled
+                if (state.settings.gistAutoSync && state.settings.gistId && state.settings.gistToken) {
+                    syncToGist();
+                }
             } catch (error) {
                 if (error.name === 'QuotaExceededError') {
                     console.error('Storage quota exceeded');
@@ -388,6 +397,145 @@
                 }
             }
         }
+        
+        // ============================================
+        // GITHUB GIST SYNC
+        // ============================================
+        
+        let syncTimeout = null;
+        let lastSyncTime = 0;
+        
+        async function syncToGist() {
+            // Debounce - don't sync more than once per 5 seconds
+            const now = Date.now();
+            if (now - lastSyncTime < 5000) {
+                clearTimeout(syncTimeout);
+                syncTimeout = setTimeout(syncToGist, 5000);
+                return;
+            }
+            
+            try {
+                const data = {
+                    version: '19.0',
+                    synced: new Date().toISOString(),
+                    projects: state.projects,
+                    customers: state.customers,
+                    settings: {
+                        ...state.settings,
+                        gistToken: undefined // Don't save token to Gist for security
+                    }
+                };
+                
+                const response = await fetch(`https://api.github.com/gists/${state.settings.gistId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `token ${state.settings.gistToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        files: {
+                            'contractor-data.json': {
+                                content: JSON.stringify(data, null, 2)
+                            }
+                        }
+                    })
+                });
+                
+                if (response.ok) {
+                    lastSyncTime = now;
+                    state.lastSyncStatus = '✅ Synced ' + new Date().toLocaleTimeString();
+                    diagLog('Synced to GitHub Gist', 'success');
+                } else {
+                    const error = await response.json();
+                    state.lastSyncStatus = '❌ Sync failed';
+                    console.error('Gist sync error:', error);
+                }
+            } catch (error) {
+                state.lastSyncStatus = '❌ Sync failed';
+                console.error('Gist sync error:', error);
+            }
+        }
+        
+        async function syncFromGist() {
+            if (!state.settings.gistId || !state.settings.gistToken) {
+                alert('Please configure GitHub Gist settings first');
+                return;
+            }
+            
+            try {
+                diagLog('Loading from GitHub Gist...', 'info');
+                
+                const response = await fetch(`https://api.github.com/gists/${state.settings.gistId}`, {
+                    headers: {
+                        'Authorization': `token ${state.settings.gistToken}`,
+                    }
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('Failed to load from Gist: ' + (error.message || 'Unknown error'));
+                    return;
+                }
+                
+                const gist = await response.json();
+                const fileContent = gist.files['contractor-data.json']?.content;
+                
+                if (!fileContent) {
+                    alert('Gist does not contain contractor-data.json file');
+                    return;
+                }
+                
+                const data = JSON.parse(fileContent);
+                
+                // Restore data
+                state.projects = data.projects || [];
+                state.customers = data.customers || [];
+                state.settings = { ...state.settings, ...data.settings };
+                
+                // Save to localStorage
+                localStorage.setItem('contractorProjects', JSON.stringify(state.projects));
+                localStorage.setItem('contractorCustomers', JSON.stringify(state.customers));
+                localStorage.setItem('contractorSettings', JSON.stringify(state.settings));
+                
+                state.view = 'list';
+                state.currentProject = null;
+                render();
+                
+                state.lastSyncStatus = '✅ Loaded ' + new Date().toLocaleTimeString();
+                diagLog('Loaded from GitHub Gist', 'success');
+                alert(`✅ Data loaded from Gist!\n\nProjects: ${state.projects.length}\nCustomers: ${state.customers.length}`);
+                
+            } catch (error) {
+                alert('Error loading from Gist: ' + error.message);
+                diagLog('Gist load error: ' + error.message, 'error');
+            }
+        }
+        
+        async function testGistConnection() {
+            if (!state.settings.gistId || !state.settings.gistToken) {
+                alert('Please enter both Gist ID and Personal Access Token');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`https://api.github.com/gists/${state.settings.gistId}`, {
+                    headers: {
+                        'Authorization': `token ${state.settings.gistToken}`,
+                    }
+                });
+                
+                if (response.ok) {
+                    alert('✅ Connection successful!\n\nGist found and accessible.');
+                    diagLog('Gist connection test passed', 'success');
+                } else {
+                    const error = await response.json();
+                    alert('❌ Connection failed:\n\n' + (error.message || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('❌ Connection error:\n\n' + error.message);
+            }
+        }
+        
         
         function getStorageUsage() {
             try {
@@ -475,7 +623,14 @@
             return `
                 <div class="container">
                     <div class="header">
-                        <h1>Projects</h1>
+                        <div>
+                            <h1>Projects</h1>
+                            ${state.settings.gistAutoSync && state.lastSyncStatus ? `
+                                <div style="font-size: 11px; color: #7f8c8d; margin-top: 4px;">
+                                    ${state.lastSyncStatus}
+                                </div>
+                            ` : ''}
+                        </div>
                         <button class="btn btn-settings" onclick="showSettings()">⚙️</button>
                     </div>
                     
@@ -580,6 +735,83 @@
                                 style="width: 100%; background: #27ae60; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: 600;">
                                 👥 Manage Customers (${state.customers.length})
                             </button>
+                        </div>
+                        
+                        <!-- GitHub Gist Cloud Sync -->
+                        <div style="background: #e8f4fd; padding: 20px; border-radius: 12px; border-left: 4px solid #2196f3; margin-bottom: 20px;">
+                            <h3 style="margin-bottom: 12px; color: #2c3e50;">☁️ Cloud Sync (GitHub Gist)</h3>
+                            <p style="font-size: 14px; color: #2c3e50; margin-bottom: 16px;">
+                                Automatically sync your data across all devices using GitHub Gist. Setup takes 5 minutes!
+                            </p>
+                            
+                            ${state.settings.gistAutoSync && state.settings.gistId ? `
+                                <div style="background: #d4edda; padding: 12px; border-radius: 6px; margin-bottom: 12px; border-left: 3px solid #28a745;">
+                                    <div style="font-weight: 600; color: #155724; margin-bottom: 4px;">✅ Auto-Sync Enabled</div>
+                                    <div style="font-size: 13px; color: #155724;">
+                                        ${state.lastSyncStatus || 'Waiting for changes...'}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            
+                            <div class="form-group">
+                                <label>Gist ID</label>
+                                <input type="text" id="gistId" value="${state.settings.gistId || ''}" 
+                                    placeholder="abc123def456..." 
+                                    style="font-family: monospace;">
+                                <p style="font-size: 12px; color: #7f8c8d; margin-top: 4px;">
+                                    The ID from your Gist URL (e.g., gist.github.com/username/<strong>abc123def456</strong>)
+                                </p>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Personal Access Token</label>
+                                <input type="password" id="gistToken" value="${state.settings.gistToken || ''}" 
+                                    placeholder="ghp_..." 
+                                    style="font-family: monospace;">
+                                <p style="font-size: 12px; color: #7f8c8d; margin-top: 4px;">
+                                    Create at: <a href="https://github.com/settings/tokens/new?scopes=gist&description=Contractor%20App" target="_blank">GitHub Token Settings</a> (needs 'gist' permission)
+                                </p>
+                            </div>
+                            
+                            <div style="margin-bottom: 16px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                    <input type="checkbox" id="gistAutoSync" ${state.settings.gistAutoSync ? 'checked' : ''} 
+                                        onchange="state.settings.gistAutoSync = this.checked; saveData();">
+                                    <span style="font-weight: 600;">Enable Auto-Sync</span>
+                                </label>
+                                <p style="font-size: 12px; color: #7f8c8d; margin-top: 4px; margin-left: 28px;">
+                                    Automatically sync to Gist every time you make changes
+                                </p>
+                            </div>
+                            
+                            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                <button onclick="testGistConnection()" 
+                                    style="flex: 1; background: #17a2b8; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                                    🔍 Test Connection
+                                </button>
+                                <button onclick="syncFromGist()" 
+                                    style="flex: 1; background: #28a745; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                                    ⬇️ Load from Gist
+                                </button>
+                                <button onclick="syncToGist()" 
+                                    style="flex: 1; background: #007bff; color: white; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: 600;">
+                                    ⬆️ Push to Gist
+                                </button>
+                            </div>
+                            
+                            <details style="margin-top: 12px; padding: 12px; background: #fff; border-radius: 6px; border: 1px solid #dee2e6;">
+                                <summary style="cursor: pointer; font-weight: 600; color: #007bff;">📖 Setup Instructions</summary>
+                                <ol style="margin: 12px 0 0 20px; font-size: 13px; line-height: 1.8;">
+                                    <li>Go to <a href="https://gist.github.com" target="_blank">gist.github.com</a></li>
+                                    <li>Create a <strong>Secret Gist</strong> named "contractor-data.json"</li>
+                                    <li>Copy the Gist ID from the URL</li>
+                                    <li>Go to <a href="https://github.com/settings/tokens/new?scopes=gist&description=Contractor%20App" target="_blank">GitHub Tokens</a></li>
+                                    <li>Generate token with <strong>gist</strong> permission</li>
+                                    <li>Copy the token (starts with ghp_)</li>
+                                    <li>Paste both above and click "Test Connection"</li>
+                                    <li>Enable "Auto-Sync" and you're done!</li>
+                                </ol>
+                            </details>
                         </div>
                         
                         <!-- Backup & Restore -->
@@ -1579,6 +1811,12 @@
             state.settings.companyEmail = document.getElementById('companyEmail').value;
             state.settings.companyPhone = document.getElementById('companyPhone').value;
             state.settings.defaultHourlyRate = document.getElementById('defaultHourlyRate').value;
+            
+            // Save Gist settings
+            state.settings.gistId = document.getElementById('gistId').value.trim();
+            state.settings.gistToken = document.getElementById('gistToken').value.trim();
+            state.settings.gistAutoSync = document.getElementById('gistAutoSync').checked;
+            
             saveData();
             alert('Settings saved!');
             state.view = 'list';
