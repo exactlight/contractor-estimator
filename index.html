@@ -384,7 +384,11 @@
                 localStorage.setItem('geminiApiKey', state.settings.apiKey);
                 localStorage.setItem('contractorSettings', JSON.stringify(state.settings));
                 
-                // Auto-sync to GitHub Gist if enabled
+                // NOTE: Auto-sync DISABLED to prevent conflicts
+                // Use the 🔄 Sync button to sync between devices
+                // This prevents race conditions where both devices push simultaneously
+                
+                /* DISABLED AUTO-PUSH - causes conflicts
                 console.log('Auto-sync check:', {
                     gistAutoSync: state.settings.gistAutoSync,
                     gistId: state.settings.gistId,
@@ -397,6 +401,7 @@
                 } else {
                     console.log('Auto-sync not triggered (disabled or not configured)');
                 }
+                */
             } catch (error) {
                 if (error.name === 'QuotaExceededError') {
                     console.error('Storage quota exceeded');
@@ -875,20 +880,13 @@
                     <div class="header">
                         <div style="flex: 1;">
                             <h1>Projects</h1>
-                            ${state.settings.gistAutoSync && state.settings.gistId ? `
+                            ${state.settings.gistId ? `
                                 <div style="font-size: 11px; color: #7f8c8d; margin-top: 4px;">
-                                    ${state.lastSyncStatus || '☁️ Auto-sync enabled'}
+                                    ${state.lastSyncStatus || '☁️ Auto-sync active'}
                                 </div>
                             ` : ''}
                         </div>
-                        <div style="display: flex; gap: 8px;">
-                            ${state.settings.gistId && state.settings.gistToken ? `
-                                <button class="btn btn-icon" onclick="manualSyncBothWays()" title="Sync Now" style="background: #3498db; color: white;">
-                                    🔄
-                                </button>
-                            ` : ''}
-                            <button class="btn btn-settings" onclick="showSettings()">⚙️</button>
-                        </div>
+                        <button class="btn btn-settings" onclick="showSettings()">⚙️</button>
                     </div>
                     
                     <div class="filter-tabs">
@@ -1030,15 +1028,14 @@
                                 </p>
                             </div>
                             
-                            <div style="margin-bottom: 16px;">
-                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                                    <input type="checkbox" id="gistAutoSync" ${state.settings.gistAutoSync ? 'checked' : ''} 
-                                        onchange="state.settings.gistAutoSync = this.checked; saveData();">
-                                    <span style="font-weight: 600;">Enable Auto-Sync</span>
-                                </label>
-                                <p style="font-size: 12px; color: #7f8c8d; margin-top: 4px; margin-left: 28px;">
-                                    Automatically sync to Gist every time you make changes
-                                </p>
+                            <!-- Auto-sync explanation -->
+                            <div style="background: #d4edda; padding: 12px; border-radius: 6px; margin-bottom: 16px; border-left: 3px solid #28a745;">
+                                <div style="font-weight: 600; color: #155724; margin-bottom: 4px;">✨ Auto-Sync Enabled</div>
+                                <div style="font-size: 13px; color: #155724;">
+                                    • Opens project → Loads latest from cloud<br>
+                                    • Closes project → Saves to cloud<br>
+                                    No buttons to remember!
+                                </div>
                             </div>
                             
                             <div style="display: flex; gap: 8px; margin-bottom: 12px;">
@@ -1223,8 +1220,9 @@
             return `
                 <div style="background: white; padding: 20px; margin-bottom: 20px;">
                     <div class="container">
-                        <button onclick="state.view='list'; render();" style="background: none; border: none; color: #3498db; font-weight: 600; cursor: pointer; margin-bottom: 12px;">
-                            ← Back to Projects
+                        <button onclick="saveAndCloseProject()" 
+                            style="background: #27ae60; border: none; color: white; font-weight: 600; cursor: pointer; margin-bottom: 12px; padding: 8px 16px; border-radius: 6px;">
+                            💾 Save & Close
                         </button>
                         <div style="display: flex; justify-content: space-between; align-items: start;">
                             <div>
@@ -2142,9 +2140,51 @@
             render();
         }
 
-        function openProject(id) {
+        async function openProject(id) {
+            // Auto-sync: Load latest from Gist before opening project
+            if (state.settings.gistId && state.settings.gistToken) {
+                console.log('📥 Auto-loading latest data before opening project...');
+                state.lastSyncStatus = '📥 Loading latest...';
+                render();
+                
+                try {
+                    await syncFromGist(true); // Silent load
+                    console.log('✅ Latest data loaded');
+                } catch (error) {
+                    console.error('Failed to load from Gist:', error);
+                    // Continue anyway - use local data
+                }
+            }
+            
             state.currentProject = state.projects.find(p => p.id === id);
             state.view = 'project';
+            render();
+        }
+        
+        async function saveAndCloseProject() {
+            // Auto-sync: Push to Gist when closing project
+            if (state.settings.gistId && state.settings.gistToken) {
+                console.log('📤 Auto-saving to Gist before closing project...');
+                state.lastSyncStatus = '📤 Saving...';
+                render();
+                
+                try {
+                    const success = await syncToGist();
+                    if (success) {
+                        console.log('✅ Saved to Gist');
+                        state.lastSyncStatus = '✅ Saved ' + new Date().toLocaleTimeString();
+                    } else {
+                        console.warn('⚠️ Save to Gist failed');
+                        state.lastSyncStatus = '⚠️ Save failed';
+                    }
+                } catch (error) {
+                    console.error('Failed to save to Gist:', error);
+                    state.lastSyncStatus = '❌ Save failed';
+                }
+            }
+            
+            state.view = 'list';
+            state.currentProject = null;
             render();
         }
 
