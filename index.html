@@ -499,13 +499,46 @@
             }
         }
         
-        async function syncFromGist() {
+        async function manualSyncBothWays() {
+            // Push local changes, then pull remote changes (smart merge)
+            try {
+                diagLog('Starting two-way sync...', 'info');
+                state.lastSyncStatus = '🔄 Syncing...';
+                render();
+                
+                // First push our local changes
+                const pushSuccess = await syncToGist();
+                
+                if (pushSuccess) {
+                    // Wait a moment for Gist to process
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // Then load and merge with remote changes (silently)
+                    await syncFromGist(true);
+                    
+                    state.lastSyncStatus = '✅ Synced ' + new Date().toLocaleTimeString();
+                    diagLog('Two-way sync complete', 'success');
+                    render();
+                } else {
+                    state.lastSyncStatus = '❌ Sync failed';
+                    alert('❌ Sync failed - could not push to Gist');
+                    render();
+                }
+            } catch (error) {
+                state.lastSyncStatus = '❌ Sync failed';
+                alert('❌ Sync error:\n\n' + error.message);
+                diagLog('Sync error: ' + error.message, 'error');
+                render();
+            }
+        }
+        
+        async function syncFromGist(silent = false) {
             // Try to read from form first (if in settings), otherwise use saved state
             const gistId = document.getElementById('gistId')?.value.trim() || state.settings.gistId;
             const gistToken = document.getElementById('gistToken')?.value.trim() || state.settings.gistToken;
             
             if (!gistId || !gistToken) {
-                alert('Please configure GitHub Gist settings first');
+                if (!silent) alert('Please configure GitHub Gist settings first');
                 return;
             }
             
@@ -569,10 +602,14 @@
                     };
                 }
                 
-                // Merge projects while preserving photos from existing local projects
+                // Smart merge: Combine remote changes with local changes
                 const existingProjectsMap = new Map();
                 state.projects.forEach(p => existingProjectsMap.set(p.id, p));
                 
+                const remoteProjectsMap = new Map();
+                (data.projects || []).forEach(p => remoteProjectsMap.set(p.id, p));
+                
+                // Start with all remote projects (these are the "source of truth" for structure)
                 const mergedProjects = (data.projects || []).map(syncedProject => {
                     const existingProject = existingProjectsMap.get(syncedProject.id);
                     
@@ -581,25 +618,57 @@
                         syncedProject.jobs = [];
                     }
                     
-                    // If we have an existing local version with photos, merge them in
-                    if (existingProject && existingProject.jobs) {
-                        const mergedJobs = (syncedProject.jobs || []).map(syncedJob => {
-                            const existingJob = existingProject.jobs?.find(j => j.id === syncedJob.id);
-                            return {
-                                ...syncedJob,
-                                photos: existingJob?.photos || [] // Preserve existing photos
-                            };
+                    // If we have an existing local version, merge it carefully
+                    if (existingProject) {
+                        // Merge jobs - include both remote and local-only jobs
+                        const syncedJobsMap = new Map();
+                        (syncedProject.jobs || []).forEach(j => syncedJobsMap.set(j.id, j));
+                        
+                        const localJobsMap = new Map();
+                        (existingProject.jobs || []).forEach(j => localJobsMap.set(j.id, j));
+                        
+                        // Combine: remote jobs + local-only jobs
+                        const allJobIds = new Set([...syncedJobsMap.keys(), ...localJobsMap.keys()]);
+                        const mergedJobs = Array.from(allJobIds).map(jobId => {
+                            const remoteJob = syncedJobsMap.get(jobId);
+                            const localJob = localJobsMap.get(jobId);
+                            
+                            if (remoteJob && localJob) {
+                                // Job exists in both - use remote but preserve photos
+                                return {
+                                    ...remoteJob,
+                                    photos: localJob.photos || []
+                                };
+                            } else if (localJob) {
+                                // Local-only job - keep it!
+                                return localJob;
+                            } else {
+                                // Remote-only job - use it, ensure photos array
+                                return {
+                                    ...remoteJob,
+                                    photos: remoteJob.photos || []
+                                };
+                            }
                         });
+                        
                         return { ...syncedProject, jobs: mergedJobs };
                     }
                     
-                    // Ensure each job has photos array
-                    syncedProject.jobs = syncedProject.jobs.map(job => ({
+                    // New project from remote - ensure arrays exist
+                    syncedProject.jobs = (syncedProject.jobs || []).map(job => ({
                         ...job,
                         photos: job.photos || []
                     }));
                     
                     return syncedProject;
+                });
+                
+                // Add any local-only projects (created locally but not yet synced)
+                state.projects.forEach(localProject => {
+                    if (!remoteProjectsMap.has(localProject.id)) {
+                        // This project only exists locally - keep it!
+                        mergedProjects.push(localProject);
+                    }
                 });
                 
                 // Then restore projects and customers
@@ -619,15 +688,19 @@
                 state.currentProject = null;
                 render();
                 
-                state.lastSyncStatus = '✅ Loaded ' + new Date().toLocaleTimeString();
+                state.lastSyncStatus = '✅ Synced ' + new Date().toLocaleTimeString();
                 diagLog('Loaded from GitHub Gist', 'success');
                 diagLog(`Projects loaded: ${state.projects.length}, Customers loaded: ${state.customers.length}`, 'info');
                 
-                // Show what was actually loaded
-                alert(`✅ Data loaded from Gist!\n\nProjects: ${state.projects.length}\nCustomers: ${state.customers.length}\n\n📸 Note: Photos are not synced via Gist (they stay on each device to save space).${state.projects.length === 0 ? '\n\n⚠️ No projects in Gist! Try pushing from desktop again.' : ''}`);
+                // Show alert only if not silent (manual load)
+                if (!silent) {
+                    alert(`✅ Data synced!\n\nProjects: ${state.projects.length}\nCustomers: ${state.customers.length}\n\n📸 Note: Photos stay on each device to save space.${state.projects.length === 0 ? '\n\n⚠️ No projects in Gist! Try pushing from desktop again.' : ''}`);
+                }
                 
             } catch (error) {
-                alert('Error loading from Gist: ' + error.message);
+                if (!silent) {
+                    alert('Error loading from Gist: ' + error.message);
+                }
                 diagLog('Gist load error: ' + error.message, 'error');
             }
         }
@@ -748,15 +821,22 @@
             return `
                 <div class="container">
                     <div class="header">
-                        <div>
+                        <div style="flex: 1;">
                             <h1>Projects</h1>
-                            ${state.settings.gistAutoSync && state.lastSyncStatus ? `
+                            ${state.settings.gistAutoSync && state.settings.gistId ? `
                                 <div style="font-size: 11px; color: #7f8c8d; margin-top: 4px;">
-                                    ${state.lastSyncStatus}
+                                    ${state.lastSyncStatus || '☁️ Auto-sync enabled'}
                                 </div>
                             ` : ''}
                         </div>
-                        <button class="btn btn-settings" onclick="showSettings()">⚙️</button>
+                        <div style="display: flex; gap: 8px;">
+                            ${state.settings.gistId && state.settings.gistToken ? `
+                                <button class="btn btn-icon" onclick="manualSyncBothWays()" title="Sync Now" style="background: #3498db; color: white;">
+                                    🔄
+                                </button>
+                            ` : ''}
+                            <button class="btn btn-settings" onclick="showSettings()">⚙️</button>
+                        </div>
                     </div>
                     
                     <div class="filter-tabs">
