@@ -414,13 +414,23 @@
         
         let syncTimeout = null;
         let lastSyncTime = 0;
+        let syncInProgress = false;
         
         async function syncToGist() {
+            // If already syncing, schedule for later
+            if (syncInProgress) {
+                console.log('Sync already in progress, scheduling for later...');
+                clearTimeout(syncTimeout);
+                syncTimeout = setTimeout(syncToGist, 3000);
+                return;
+            }
+            
             // Debounce - don't sync more than once per 5 seconds
             const now = Date.now();
             if (now - lastSyncTime < 5000) {
+                console.log('Too soon since last sync, scheduling for later...');
                 clearTimeout(syncTimeout);
-                syncTimeout = setTimeout(syncToGist, 5000);
+                syncTimeout = setTimeout(syncToGist, 5000 - (now - lastSyncTime));
                 return;
             }
             
@@ -430,6 +440,9 @@
             if (!gistId || !gistToken) {
                 return; // Can't sync without credentials
             }
+            
+            syncInProgress = true;
+            console.log('Starting sync to Gist...');
             
             try {
                 // Strip photos from projects before syncing (they're too large for Gist)
@@ -475,19 +488,34 @@
                 });
                 
                 if (response.ok) {
-                    lastSyncTime = now;
+                    lastSyncTime = Date.now();
                     state.lastSyncStatus = '✅ Synced ' + new Date().toLocaleTimeString();
                     diagLog('Synced to GitHub Gist', 'success');
+                    syncInProgress = false;
                     return true;
                 } else {
                     const error = await response.json();
+                    
+                    // Handle 409 conflict specially
+                    if (response.status === 409) {
+                        console.warn('Gist sync conflict (409) - will retry in 5 seconds');
+                        state.lastSyncStatus = '⚠️ Conflict, retrying...';
+                        syncInProgress = false;
+                        // Schedule retry
+                        clearTimeout(syncTimeout);
+                        syncTimeout = setTimeout(syncToGist, 5000);
+                        return false;
+                    }
+                    
                     state.lastSyncStatus = '❌ Sync failed';
                     console.error('Gist sync error:', error);
+                    syncInProgress = false;
                     return false;
                 }
             } catch (error) {
                 state.lastSyncStatus = '❌ Sync failed';
                 console.error('Gist sync error:', error);
+                syncInProgress = false;
                 return false;
             }
         }
