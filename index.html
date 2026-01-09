@@ -576,6 +576,11 @@
                 const mergedProjects = (data.projects || []).map(syncedProject => {
                     const existingProject = existingProjectsMap.get(syncedProject.id);
                     
+                    // Ensure jobs array exists
+                    if (!syncedProject.jobs) {
+                        syncedProject.jobs = [];
+                    }
+                    
                     // If we have an existing local version with photos, merge them in
                     if (existingProject && existingProject.jobs) {
                         const mergedJobs = (syncedProject.jobs || []).map(syncedJob => {
@@ -587,6 +592,12 @@
                         });
                         return { ...syncedProject, jobs: mergedJobs };
                     }
+                    
+                    // Ensure each job has photos array
+                    syncedProject.jobs = syncedProject.jobs.map(job => ({
+                        ...job,
+                        photos: job.photos || []
+                    }));
                     
                     return syncedProject;
                 });
@@ -778,7 +789,7 @@
                                             <h3 style="margin-bottom: 8px; color: #2c3e50; font-size: 18px;">${project.name}</h3>
                                             <div class="phase-badge ${getPhaseClass(project.phase)}">${project.phase}</div>
                                             <p style="color: #95a5a6; font-size: 12px; margin-top: 8px;">
-                                                ${project.jobs.length} jobs • Created ${new Date(project.createdAt).toLocaleDateString()}
+                                                ${(project.jobs || []).length} jobs • Created ${new Date(project.createdAt).toLocaleDateString()}
                                             </p>
                                         </div>
                                         <div style="text-align: right; margin-left: 16px;">
@@ -1504,9 +1515,11 @@
 
         // Helper functions
         function calculateProjectHours(project) {
-            return project.jobs.reduce((total, job) => 
-                total + job.tasks.reduce((sum, task) => sum + (parseFloat(task.hours) || 0), 0)
-            , 0);
+            if (!project.jobs) return 0;
+            return project.jobs.reduce((total, job) => {
+                if (!job.tasks) return total;
+                return total + job.tasks.reduce((sum, task) => sum + (parseFloat(task.hours) || 0), 0);
+            }, 0);
         }
 
         function calculateProjectCost(project) {
@@ -1514,6 +1527,7 @@
         }
 
         function calculateProjectExpenses(project) {
+            if (!project.jobs) return 0;
             return project.jobs.reduce((total, job) => {
                 const expenses = job.expenses || [];
                 return total + expenses.reduce((sum, expense) => sum + (parseFloat(expense.amount) || 0), 0);
