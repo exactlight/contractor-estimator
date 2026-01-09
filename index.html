@@ -422,14 +422,30 @@
             }
             
             try {
+                // Strip photos from projects before syncing (they're too large for Gist)
+                const projectsWithoutPhotos = state.projects.map(project => {
+                    const { ...projectCopy } = project;
+                    
+                    // Remove photos from jobs
+                    if (projectCopy.jobs) {
+                        projectCopy.jobs = projectCopy.jobs.map(job => {
+                            const { photos, ...jobWithoutPhotos } = job;
+                            return jobWithoutPhotos;
+                        });
+                    }
+                    
+                    return projectCopy;
+                });
+                
                 const data = {
                     version: '19.0',
                     synced: new Date().toISOString(),
-                    projects: state.projects,
+                    projects: projectsWithoutPhotos, // Photos excluded for size
                     customers: state.customers,
                     settings: {
                         ...state.settings,
-                        gistToken: undefined // Don't save token to Gist for security
+                        gistToken: undefined, // Don't save token to Gist for security
+                        companyLogo: undefined // Don't sync logo either (too large)
                     }
                 };
                 
@@ -473,7 +489,7 @@
                 const success = await syncToGist();
                 
                 if (success) {
-                    alert('✅ Successfully pushed to Gist!\n\nYour data is now in the cloud.');
+                    alert('✅ Successfully pushed to Gist!\n\nYour data is now in the cloud.\n\n📸 Note: Photos are excluded from sync to save space (they stay on this device).');
                     render(); // Update UI to show sync status
                 } else {
                     alert('❌ Failed to push to Gist.\n\nCheck the diagnostic console for details.');
@@ -530,10 +546,58 @@
                     return;
                 }
                 
-                // Restore data
-                state.projects = data.projects || [];
+                console.log('Loaded data from Gist:', data);
+                console.log('Projects array:', data.projects);
+                console.log('Projects length:', data.projects?.length);
+                console.log('Customers array:', data.customers);
+                console.log('Customers length:', data.customers?.length);
+                
+                // Restore data - ORDER MATTERS!
+                // Restore settings first (but keep logo, token, and gist settings from current state)
+                if (data.settings) {
+                    const currentLogo = state.settings.companyLogo;
+                    const currentLogoWidth = state.settings.logoWidth;
+                    const currentLogoHeight = state.settings.logoHeight;
+                    state.settings = { 
+                        ...state.settings, 
+                        ...data.settings, 
+                        gistId, 
+                        gistToken,
+                        companyLogo: currentLogo, // Keep current logo (not synced)
+                        logoWidth: currentLogoWidth,
+                        logoHeight: currentLogoHeight
+                    };
+                }
+                
+                // Merge projects while preserving photos from existing local projects
+                const existingProjectsMap = new Map();
+                state.projects.forEach(p => existingProjectsMap.set(p.id, p));
+                
+                const mergedProjects = (data.projects || []).map(syncedProject => {
+                    const existingProject = existingProjectsMap.get(syncedProject.id);
+                    
+                    // If we have an existing local version with photos, merge them in
+                    if (existingProject && existingProject.jobs) {
+                        const mergedJobs = (syncedProject.jobs || []).map(syncedJob => {
+                            const existingJob = existingProject.jobs?.find(j => j.id === syncedJob.id);
+                            return {
+                                ...syncedJob,
+                                photos: existingJob?.photos || [] // Preserve existing photos
+                            };
+                        });
+                        return { ...syncedProject, jobs: mergedJobs };
+                    }
+                    
+                    return syncedProject;
+                });
+                
+                // Then restore projects and customers
+                state.projects = mergedProjects; // Use merged version with photos preserved
                 state.customers = data.customers || [];
-                state.settings = { ...state.settings, ...data.settings, gistId, gistToken }; // Keep current credentials
+                
+                console.log('After restore - state.projects:', state.projects);
+                console.log('After restore - state.projects.length:', state.projects.length);
+                console.log('After restore - state.customers.length:', state.customers.length);
                 
                 // Save to localStorage
                 localStorage.setItem('contractorProjects', JSON.stringify(state.projects));
@@ -546,7 +610,10 @@
                 
                 state.lastSyncStatus = '✅ Loaded ' + new Date().toLocaleTimeString();
                 diagLog('Loaded from GitHub Gist', 'success');
-                alert(`✅ Data loaded from Gist!\n\nProjects: ${state.projects.length}\nCustomers: ${state.customers.length}`);
+                diagLog(`Projects loaded: ${state.projects.length}, Customers loaded: ${state.customers.length}`, 'info');
+                
+                // Show what was actually loaded
+                alert(`✅ Data loaded from Gist!\n\nProjects: ${state.projects.length}\nCustomers: ${state.customers.length}\n\n📸 Note: Photos are not synced via Gist (they stay on each device to save space).${state.projects.length === 0 ? '\n\n⚠️ No projects in Gist! Try pushing from desktop again.' : ''}`);
                 
             } catch (error) {
                 alert('Error loading from Gist: ' + error.message);
