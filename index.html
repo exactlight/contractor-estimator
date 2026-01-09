@@ -317,6 +317,22 @@
                 diagLog('Loading data...');
                 loadData();
                 diagLog('Data loaded', 'success');
+                
+                // Auto-sync from Gist on app start
+                if (state.settings.gistId && state.settings.gistToken) {
+                    diagLog('Auto-loading from Gist on startup...');
+                    state.lastSyncStatus = '📥 Syncing...';
+                    syncFromGist(true).then(() => {
+                        diagLog('Startup sync complete', 'success');
+                        state.lastSyncStatus = '✅ Synced ' + new Date().toLocaleTimeString();
+                        render();
+                    }).catch(err => {
+                        diagLog('Startup sync failed: ' + err.message, 'warning');
+                        state.lastSyncStatus = '⚠️ Sync failed';
+                        render();
+                    });
+                }
+                
                 diagLog('Rendering...');
                 render();
                 diagLog('Render complete!', 'success');
