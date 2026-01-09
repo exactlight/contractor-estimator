@@ -1691,11 +1691,12 @@
         // ============================================
         // V16 FEATURE 1: DELETE PROJECT
         // ============================================
-        function deleteCurrentProject() {
+        async function deleteCurrentProject() {
             if (!confirm(`Delete project "${state.currentProject.name}"? This cannot be undone.`)) {
                 return;
             }
             
+            const projectName = state.currentProject.name;
             const projectId = state.currentProject.id;
             const projectIndex = state.projects.findIndex(p => p.id === projectId);
             
@@ -1708,7 +1709,29 @@
                 
                 state.projects.splice(projectIndex, 1);
                 saveData();
-                diagLog(`Project deleted: ${state.currentProject.name}`, 'warning');
+                diagLog(`Project deleted: ${projectName}`, 'warning');
+                
+                // CRITICAL: Push deletion to Gist immediately so other devices know
+                if (state.settings.gistId && state.settings.gistToken) {
+                    console.log('📤 Pushing project deletion to Gist...');
+                    state.lastSyncStatus = '🗑️ Deleting...';
+                    render();
+                    
+                    try {
+                        const success = await syncToGist();
+                        if (success) {
+                            console.log('✅ Deletion synced to Gist');
+                            state.lastSyncStatus = '✅ Deleted & synced';
+                        } else {
+                            console.warn('⚠️ Failed to sync deletion');
+                            state.lastSyncStatus = '⚠️ Delete sync failed';
+                        }
+                    } catch (error) {
+                        console.error('Failed to sync deletion:', error);
+                        state.lastSyncStatus = '❌ Delete sync failed';
+                    }
+                }
+                
                 state.view = 'list';
                 state.currentProject = null;
                 render();
