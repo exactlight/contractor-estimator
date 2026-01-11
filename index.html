@@ -672,77 +672,42 @@
                     };
                 }
                 
-                // Smart merge: Combine remote changes with local changes
+                // SIMPLE APPROACH: Use Gist as source of truth
+                // Only preserve photos (which don't sync) from local storage
                 const existingProjectsMap = new Map();
                 state.projects.forEach(p => existingProjectsMap.set(p.id, p));
                 
-                const remoteProjectsMap = new Map();
-                (data.projects || []).forEach(p => remoteProjectsMap.set(p.id, p));
-                
-                // Start with all remote projects (these are the "source of truth" for structure)
-                const mergedProjects = (data.projects || []).map(syncedProject => {
-                    const existingProject = existingProjectsMap.get(syncedProject.id);
+                // Use projects from Gist, but preserve local photos
+                const restoredProjects = (data.projects || []).map(gistProject => {
+                    const localProject = existingProjectsMap.get(gistProject.id);
                     
                     // Ensure jobs array exists
-                    if (!syncedProject.jobs) {
-                        syncedProject.jobs = [];
+                    if (!gistProject.jobs) {
+                        gistProject.jobs = [];
                     }
                     
-                    // If we have an existing local version, merge it carefully
-                    if (existingProject) {
-                        // Merge jobs - include both remote and local-only jobs
-                        const syncedJobsMap = new Map();
-                        (syncedProject.jobs || []).forEach(j => syncedJobsMap.set(j.id, j));
-                        
-                        const localJobsMap = new Map();
-                        (existingProject.jobs || []).forEach(j => localJobsMap.set(j.id, j));
-                        
-                        // Combine: remote jobs + local-only jobs
-                        const allJobIds = new Set([...syncedJobsMap.keys(), ...localJobsMap.keys()]);
-                        const mergedJobs = Array.from(allJobIds).map(jobId => {
-                            const remoteJob = syncedJobsMap.get(jobId);
-                            const localJob = localJobsMap.get(jobId);
-                            
-                            if (remoteJob && localJob) {
-                                // Job exists in both - use remote but preserve photos
-                                return {
-                                    ...remoteJob,
-                                    photos: localJob.photos || []
-                                };
-                            } else if (localJob) {
-                                // Local-only job - keep it!
-                                return localJob;
-                            } else {
-                                // Remote-only job - use it, ensure photos array
-                                return {
-                                    ...remoteJob,
-                                    photos: remoteJob.photos || []
-                                };
-                            }
+                    // If we have a local version, preserve its photos
+                    if (localProject && localProject.jobs) {
+                        gistProject.jobs = gistProject.jobs.map(gistJob => {
+                            const localJob = localProject.jobs.find(j => j.id === gistJob.id);
+                            return {
+                                ...gistJob,
+                                photos: localJob?.photos || []  // Preserve local photos
+                            };
                         });
-                        
-                        return { ...syncedProject, jobs: mergedJobs };
+                    } else {
+                        // No local version, ensure photos array exists
+                        gistProject.jobs = gistProject.jobs.map(job => ({
+                            ...job,
+                            photos: job.photos || []
+                        }));
                     }
                     
-                    // New project from remote - ensure arrays exist
-                    syncedProject.jobs = (syncedProject.jobs || []).map(job => ({
-                        ...job,
-                        photos: job.photos || []
-                    }));
-                    
-                    return syncedProject;
+                    return gistProject;
                 });
                 
-                // Add any local-only projects (created locally but not yet synced)
-                state.projects.forEach(localProject => {
-                    if (!remoteProjectsMap.has(localProject.id)) {
-                        // This project only exists locally - keep it!
-                        mergedProjects.push(localProject);
-                    }
-                });
-                
-                // Then restore projects and customers
-                state.projects = mergedProjects; // Use merged version with photos preserved
+                // Use Gist data as the complete truth
+                state.projects = restoredProjects;
                 state.customers = data.customers || [];
                 
                 console.log('After restore - state.projects:', state.projects);
